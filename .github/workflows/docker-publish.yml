@@ -3,8 +3,6 @@ name: Build and Deploy
 on:
   push:
     branches:
-      - main
-      - development
       - live
       - staging
 
@@ -194,7 +192,7 @@ jobs:
 
         run: |
           # Define environment-specific variables
-          if [ "${{ github.ref_name }}" == "live" ] || [ "${{ github.ref_name }}" == "main" ]; then
+          if [ "${{ github.ref_name }}" == "live" ]; then
             CONTAINER_NAME="oys_processes_live"
             # If the user has a target folder secret per environment, fallback to a sensible default
             DEPLOY_DIR=${TARGET_DIR:-${DOCKER_FOLDER_WEBFILES:-"deployments/oys_processes_live"}}
