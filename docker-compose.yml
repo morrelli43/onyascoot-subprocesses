@@ -1,5 +1,6 @@
 services:
   contact-sync:
+    container_name: contact-sync
     build: ./contact-sync
     image: ghcr.io/morrelli43/oys_live_subprocesses:${IMAGE_TAG:-main}
     restart: unless-stopped
