@@ -109,16 +109,14 @@ class Contact:
         if other_is_authoritative:
             other_wins = True
         else:
-            # 2. Determine strict supremacy based on source existence
+            # 2. Determine supremacy based on source existence and timestamps
             other_is_truth = (source_of_truth in other.source_ids)
             self_is_truth = (source_of_truth in self.source_ids)
             
-            # If the new one isn't authoritative, but we (self) ARE the truth from a previous
-            # authoritative add in this session, then we win unconditionally.
-            if self_is_truth and not other_is_authoritative:
-                other_wins = False
-            elif other_is_truth and not self_is_truth:
+            if other_is_truth and not self_is_truth:
                 other_wins = True
+            elif self_is_truth and not other_is_truth:
+                other_wins = False
             elif self_is_truth and other_is_truth:
                 # Both claim to have source data. Check timestamps.
                 self_mod = self.last_modified if self.last_modified.tzinfo else self.last_modified.replace(tzinfo=timezone.utc)
@@ -256,14 +254,17 @@ class Contact:
 
 
 class ContactStore:
-    """In-memory canonical storage, explicitly matching only on normalized phone numbers."""
+    """In-memory canonical storage, matching on IDs, email, or phone numbers."""
     
     def __init__(self):
         self.contacts: Dict[str, Contact] = {}
-        self.phone_index: Dict[str, str] = {}  # canonical 04... phone -> contact_id
+        self.phone_index: Dict[str, str] = {}    # normalized phone -> contact_id
+        self.email_index: Dict[str, str] = {}    # email -> contact_id
+        self.square_id_index: Dict[str, str] = {} # square_id -> contact_id
+        self.custom_id_index: Dict[str, str] = {} # custom_id -> contact_id
         
     def add_contact(self, contact: Contact, source_of_truth: str = 'square', authoritative: bool = False) -> str:
-        """Add or merge a contact by strict phone match."""
+        """Add or merge a contact by checking multiple identifiers."""
         # Enforce defaults for AU
         for addr in contact.addresses:
             if not addr.get('state'):
@@ -271,12 +272,7 @@ class ContactStore:
             if not addr.get('country'):
                 addr['country'] = 'AU'
 
-        existing_id = None
-        clean_phone = contact.normalized_phone
-        
-        # ONLY deduplicate if there is a valid phone number
-        if clean_phone and clean_phone in self.phone_index:
-            existing_id = self.phone_index[clean_phone]
+        existing_id = self._find_existing_contact(contact)
             
         if existing_id:
             # Merge into the existing contact
@@ -292,11 +288,51 @@ class ContactStore:
         self._update_indexes(contact)
         return contact.contact_id
 
+    def _find_existing_contact(self, contact: Contact) -> Optional[str]:
+        """Check all indexes to find a matching contact."""
+        # 1. Match by Square ID (Strongest link)
+        sq_id = contact.source_ids.get('square')
+        if sq_id and sq_id in self.square_id_index:
+            return self.square_id_index[sq_id]
+            
+        # 2. Match by Custom ID (cst-...)
+        if contact.custom_id and contact.custom_id in self.custom_id_index:
+            return self.custom_id_index[contact.custom_id]
+            
+        # 3. Match by Normalized Phone
+        clean_phone = contact.normalized_phone
+        if clean_phone and clean_phone in self.phone_index:
+            return self.phone_index[clean_phone]
+            
+        # 4. Match by Email
+        if contact.email:
+            email_lower = contact.email.lower().strip()
+            if email_lower in self.email_index:
+                return self.email_index[email_lower]
+                
+        return None
+
     def _update_indexes(self, contact: Contact):
-        """Update lookup indexes using ONLY normalized phone numbers."""
+        """Update lookup indexes for the contact."""
+        cid = contact.contact_id
+        
+        # Phone
         clean_phone = contact.normalized_phone
         if clean_phone:
-            self.phone_index[clean_phone] = contact.contact_id
+            self.phone_index[clean_phone] = cid
+            
+        # Email
+        if contact.email:
+            self.email_index[contact.email.lower().strip()] = cid
+            
+        # Square ID
+        sq_id = contact.source_ids.get('square')
+        if sq_id:
+            self.square_id_index[sq_id] = cid
+            
+        # Custom ID
+        if contact.custom_id:
+            self.custom_id_index[contact.custom_id] = cid
 
     def get_all_contacts(self) -> List[Contact]:
         return list(self.contacts.values())
@@ -310,3 +346,6 @@ class ContactStore:
     def clear(self):
         self.contacts.clear()
         self.phone_index.clear()
+        self.email_index.clear()
+        self.square_id_index.clear()
+        self.custom_id_index.clear()

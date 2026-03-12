@@ -270,8 +270,8 @@ class SyncEngine:
             errors = 0
             
             for contact in contacts:
-                # Do not push contacts that have absolutely no phone number
-                if not contact.normalized_phone:
+                # Do not push contacts that have absolutely no usable contact info
+                if not contact.normalized_phone and not contact.email:
                     continue
                     
                 # Intelligent dirty checking to prevent infinite loops and API burning
