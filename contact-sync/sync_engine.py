@@ -221,7 +221,7 @@ class SyncEngine:
                         to_remove = [cid for cid, c in self.store.contacts.items() 
                                      if c.source_ids.get('square') == square_id]
                         for cid in to_remove:
-                            del self.store.contacts[cid]
+                            self.store.remove_contact(cid)
                 except Exception as e:
                     print(f"  Error deleting orphan from Google: {e}")
         
@@ -259,7 +259,7 @@ class SyncEngine:
                             # Remove it from our script memory as well
                             for mem_id, pc in list(self.store.contacts.items()):
                                 if pc.source_ids.get('square') == square_customer_id:
-                                    del self.store.contacts[mem_id]
+                                    self.store.remove_contact(mem_id)
                         except Exception as e:
                             print(f"  Error deleting from Google: {e}")
                     return

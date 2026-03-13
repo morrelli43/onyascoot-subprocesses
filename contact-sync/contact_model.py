@@ -299,6 +299,15 @@ class ContactStore:
             if not addr.get('country'):
                 addr['country'] = 'AU'
 
+    def add_contact(self, contact: Contact, source_of_truth: str = 'square', authoritative: bool = False) -> str:
+        """Add or merge a contact by checking multiple identifiers."""
+        # Enforce defaults for AU
+        for addr in contact.addresses:
+            if not addr.get('state'):
+                addr['state'] = 'Victoria'
+            if not addr.get('country'):
+                addr['country'] = 'AU'
+
         existing_id = self._find_existing_contact(contact)
             
         if existing_id:
@@ -315,34 +324,80 @@ class ContactStore:
         self._update_indexes(contact)
         return contact.contact_id
 
+    def remove_contact(self, contact_id: str):
+        """Remove a contact and clean up all matching indexes."""
+        if contact_id not in self.contacts:
+            return
+            
+        contact = self.contacts[contact_id]
+        
+        # Clean up indexes
+        # Phone
+        phone = contact.normalized_phone
+        if phone and self.phone_index.get(phone) == contact_id:
+            del self.phone_index[phone]
+            
+        # Email
+        if contact.email:
+            email = contact.email.lower().strip()
+            if self.email_index.get(email) == contact_id:
+                del self.email_index[email]
+                
+        # Square ID
+        sq_id = contact.source_ids.get('square')
+        if sq_id and self.square_id_index.get(sq_id) == contact_id:
+            del self.square_id_index[sq_id]
+            
+        # Custom ID
+        if contact.custom_id and self.custom_id_index.get(contact.custom_id) == contact_id:
+            del self.custom_id_index[contact.custom_id]
+            
+        # Name
+        name_key = self._get_name_key(contact)
+        if name_key and self.name_index.get(name_key) == contact_id:
+            del self.name_index[name_key]
+            
+        # Final removal
+        del self.contacts[contact_id]
+
     def _find_existing_contact(self, contact: Contact) -> Optional[str]:
         """Check all indexes to find a matching contact."""
+        
+        def check_index(index_dict, key):
+            if not key or key not in index_dict:
+                return None
+            cid = index_dict[key]
+            if cid not in self.contacts:
+                # STALE INDEX! Clean it up.
+                print(f"  [DEBUG] Cleaning up stale index entry for {key} -> {cid}")
+                del index_dict[key]
+                return None
+            return cid
+
         # 1. Match by Square ID (Strongest link)
         sq_id = contact.source_ids.get('square')
-        if sq_id and sq_id in self.square_id_index:
-            return self.square_id_index[sq_id]
+        match = check_index(self.square_id_index, sq_id)
+        if match: return match
             
         # 2. Match by Custom ID (cst-...)
-        if contact.custom_id and contact.custom_id in self.custom_id_index:
-            return self.custom_id_index[contact.custom_id]
+        match = check_index(self.custom_id_index, contact.custom_id)
+        if match: return match
             
         # 3. Match by Normalized Phone
-        clean_phone = contact.normalized_phone
-        if clean_phone and clean_phone in self.phone_index:
-            return self.phone_index[clean_phone]
+        match = check_index(self.phone_index, contact.normalized_phone)
+        if match: return match
             
         # 4. Match by Email
-        if contact.email:
-            email_lower = contact.email.lower().strip()
-            if email_lower in self.email_index:
-                return self.email_index[email_lower]
+        email = contact.email.lower().strip() if contact.email else None
+        match = check_index(self.email_index, email)
+        if match: return match
                 
         # 5. Match by Name (Fallback for contacts like "Georgia .")
         name_key = self._get_name_key(contact)
-        if name_key and name_key in self.name_index:
-             # ONLY match by name if we don't have better identifiers on the incoming contact
-             if not contact.normalized_phone and not contact.email:
-                 return self.name_index[name_key]
+        # ONLY match by name if we don't have better identifiers on the incoming contact
+        if not contact.normalized_phone and not contact.email:
+            match = check_index(self.name_index, name_key)
+            if match: return match
                  
         return None
 
