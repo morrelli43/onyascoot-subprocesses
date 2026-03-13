@@ -71,7 +71,18 @@ def test_duplication_and_unbound_error():
         print(f"  ❌ FAILURE: Caught unexpected error: {e}")
         sys.exit(1)
 
-    print("\n🎉 All duplication and error fixes verified!")
+    # 3. Test Safety for missing source_ids
+    # ------------------------------------
+    print("\nScenario 3: Safety verification for missing source_ids")
+    try:
+        c_no_ids = Contact()
+        del c_no_ids.source_ids # simulate missing attribute or None
+        target = Contact()
+        target.merge_with(c_no_ids, source_of_truth='square')
+        print("  ✅ SUCCESS: merge_with handled missing source_ids safely.")
+    except Exception as e:
+        print(f"  ❌ FAILURE: merge_with crashed on missing source_ids: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     test_duplication_and_unbound_error()

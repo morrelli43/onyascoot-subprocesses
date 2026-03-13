@@ -115,10 +115,15 @@ class Contact:
         Otherwise, we use source_of_truth and timestamp logic.
         """
         # 2. Determine supremacy based on source existence and timestamps
-        other_is_truth = (source_of_truth in other.source_ids)
-        self_is_truth = (source_of_truth in self.source_ids)
-
+        other_is_truth = False
+        self_is_truth = False
         other_wins = False
+        
+        if source_of_truth:
+            if hasattr(other, 'source_ids') and other.source_ids:
+                other_is_truth = (source_of_truth in other.source_ids)
+            if hasattr(self, 'source_ids') and self.source_ids:
+                self_is_truth = (source_of_truth in self.source_ids)
 
         # 1. Authoritative Override
         if other_is_authoritative:
@@ -204,7 +209,10 @@ class Contact:
         self.custom_id = self.custom_id or other.custom_id
 
         # Source IDs are ALWAYS combined additively
-        self.source_ids.update(other.source_ids)
+        if hasattr(other, 'source_ids') and other.source_ids:
+            if not hasattr(self, 'source_ids') or self.source_ids is None:
+                self.source_ids = {}
+            self.source_ids.update(other.source_ids)
         
         # Ensure only 1 address maximum and parse single lines
         if len(self.addresses) > 1:
