@@ -77,6 +77,15 @@ def parse_single_line_address(address_str: str) -> dict:
     return {}
 
 
+def normalize_name(name: Optional[str]) -> str:
+    """Normalize names for matching by stripping punctuation and lowercasing."""
+    if not name:
+        return ""
+    # Strip dots, commas, extra spaces and lowercase
+    clean = re.sub(r'[.,]', '', name).lower().strip()
+    return clean
+
+
 class Contact:
     """Represents a canonical contact synced between Square and Google."""
     
@@ -108,6 +117,8 @@ class Contact:
         # 2. Determine supremacy based on source existence and timestamps
         other_is_truth = (source_of_truth in other.source_ids)
         self_is_truth = (source_of_truth in self.source_ids)
+
+        other_wins = False
 
         # 1. Authoritative Override
         if other_is_authoritative:
@@ -269,6 +280,7 @@ class ContactStore:
         self.email_index: Dict[str, str] = {}    # email -> contact_id
         self.square_id_index: Dict[str, str] = {} # square_id -> contact_id
         self.custom_id_index: Dict[str, str] = {} # custom_id -> contact_id
+        self.name_index: Dict[str, str] = {}     # normalized name -> contact_id
         
     def add_contact(self, contact: Contact, source_of_truth: str = 'square', authoritative: bool = False) -> str:
         """Add or merge a contact by checking multiple identifiers."""
@@ -317,7 +329,22 @@ class ContactStore:
             if email_lower in self.email_index:
                 return self.email_index[email_lower]
                 
+        # 5. Match by Name (Fallback for contacts like "Georgia .")
+        name_key = self._get_name_key(contact)
+        if name_key and name_key in self.name_index:
+             # ONLY match by name if we don't have better identifiers on the incoming contact
+             if not contact.normalized_phone and not contact.email:
+                 return self.name_index[name_key]
+                 
         return None
+
+    def _get_name_key(self, contact: Contact) -> str:
+        """Construct a lookup key from contact names."""
+        first = normalize_name(contact.first_name)
+        last = normalize_name(contact.last_name)
+        if first and last:
+            return f"{first}|{last}"
+        return first or last
 
     def _update_indexes(self, contact: Contact):
         """Update lookup indexes for the contact."""
@@ -340,6 +367,11 @@ class ContactStore:
         # Custom ID
         if contact.custom_id:
             self.custom_id_index[contact.custom_id] = cid
+            
+        # Name Fallback
+        name_key = self._get_name_key(contact)
+        if name_key:
+            self.name_index[name_key] = cid
 
     def get_all_contacts(self) -> List[Contact]:
         return list(self.contacts.values())
@@ -356,3 +388,4 @@ class ContactStore:
         self.email_index.clear()
         self.square_id_index.clear()
         self.custom_id_index.clear()
+        self.name_index.clear()
