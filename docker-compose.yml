@@ -78,11 +78,15 @@ services:
     build: ./dontknowescooter
     image: ghcr.io/morrelli43/onyascoot-subprocesses_dontknowescooter:${IMAGE_TAG:-main}
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
     environment:
       - PORT=4314
       - PUBLIC_URL=${PUBLIC_URL:-}
     volumes:
-      - ~/dockerhub/permadata/oys_uploads:/app/uploads
+      - ~/dockerhub/permadata/oys_uploads/dontknowescooter:/app/uploads
     ports:
       - "${DONTKNOWESCOOTER_PORT:-4314}:4314"
 
