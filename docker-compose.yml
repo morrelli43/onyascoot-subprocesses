@@ -73,6 +73,19 @@ services:
     ports:
       - "${OPS_FORWARDER_PORT:-4313}:4313"
 
+  dontknowescooter:
+    container_name: dontknowescooter
+    build: ./dontknowescooter
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_dontknowescooter:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      - PORT=4314
+      - PUBLIC_URL=${PUBLIC_URL:-}
+    volumes:
+      - ~/dockerhub/permadata/oys_uploads:/app/uploads
+    ports:
+      - "${DONTKNOWESCOOTER_PORT:-4314}:4314"
+
   message-router:
     container_name: message-router
     build: ./message-router
