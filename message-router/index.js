@@ -99,7 +99,10 @@ app.post('/submit', async (req, res) => {
     // 4. Forward to Operations Site
     axios.post(opsForwarderUrl, rawData)
         .then(() => console.log('✅ Routed to Ops-Forwarder'))
-        .catch(err => console.error('⚠️ Ops-Forwarder routing failed:', err.message));
+        .catch(err => {
+            const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+            console.error('⚠️ Ops-Forwarder routing failed:', detail);
+        });
 
     res.status(200).json({
         success: true,
