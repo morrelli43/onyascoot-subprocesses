@@ -23,7 +23,7 @@ app.post('/send-it', async (req, res) => {
 
     console.log(`\n[Ops-Forwarder] Received submission: ${payload.first_name || ''} ${payload.surname || ''}`);
 
-    const targetUrl = process.env.OPS_WEBHOOK_URL || 'http://onya-operations-live:3000/api/webhooks/customer';
+    const targetUrl = process.env.OPS_WEBHOOK_URL || 'http://onya-operations-live-app:3000/api/webhooks/customer';
 
     // Forward recognised fields (deprecated top-level escooter_make/model/issue are excluded)
     const forwardPayload = {
