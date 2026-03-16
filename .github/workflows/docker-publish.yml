@@ -327,7 +327,9 @@ jobs:
             echo "OPS_WEBHOOK_URL=$OPS_WEBHOOK_URL" >> .env.subprocesses
             echo "OPS_API_KEY=$OPS_API_KEY_VAL" >> .env.subprocesses
             echo "DOCKER_NETWORK_NAME=$NETWORK_NAME" >> .env.subprocesses
-            echo "DOCKER_FOLDER_WEBFILES=$DOCKER_FOLDER_WEBFILES" >> .env.subprocesses
+            # Expand ~ to absolute path so docker-compose volume mounts work
+            EXPANDED_DOCKER_FOLDER=$(ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "echo $DOCKER_FOLDER_WEBFILES")
+            echo "DOCKER_FOLDER_WEBFILES=$EXPANDED_DOCKER_FOLDER" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."
