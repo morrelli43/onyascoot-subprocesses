@@ -191,6 +191,37 @@ jobs:
           echo "SSH Key Fingerprint:"
           ssh-keygen -l -f ~/.ssh/deployment_key
 
+      - name: Upload Google credentials to server
+        env:
+          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          PORT=${SSH_PORT:-22}
+          CRED_DIR=~/dockerhub/permadata/oys_contacts/env_files
+
+          # Ensure destination exists
+          ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+            $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $CRED_DIR"
+
+          if [ -f .credentials/credentials.json ]; then
+            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+              .credentials/credentials.json \
+              $SSH_USERNAME@$SSH_HOST_URL:$CRED_DIR/credentials.json
+            echo "✅ credentials.json uploaded"
+          else
+            echo "⚠️ .credentials/credentials.json not found, skipping"
+          fi
+
+          if [ -f .credentials/token.json ]; then
+            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+              .credentials/token.json \
+              $SSH_USERNAME@$SSH_HOST_URL:$CRED_DIR/token.json
+            echo "✅ token.json uploaded"
+          else
+            echo "⚠️ .credentials/token.json not found, skipping"
+          fi
+
       - name: Deploy to Raspberry Pi
         env:
           SSH_HOST_URL: ${{ secrets.SSH_HOST_URL }}
@@ -296,6 +327,7 @@ jobs:
             echo "OPS_WEBHOOK_URL=$OPS_WEBHOOK_URL" >> .env.subprocesses
             echo "OPS_API_KEY=$OPS_API_KEY_VAL" >> .env.subprocesses
             echo "DOCKER_NETWORK_NAME=$NETWORK_NAME" >> .env.subprocesses
+            echo "DOCKER_FOLDER_WEBFILES=$DOCKER_FOLDER_WEBFILES" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."

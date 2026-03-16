@@ -14,6 +14,7 @@ services:
       - GOOGLE_CREDENTIALS_FILE=${GOOGLE_CREDENTIALS_FILE:-/app/env_files/credentials-test.json}
       - GOOGLE_TOKEN_FILE=${GOOGLE_TOKEN_FILE:-/app/env_files/token.json}
       - GRIST_API_KEY=${GRIST_API_KEY}
+      - DOCKER_FOLDER_WEBFILES=${DOCKER_FOLDER_WEBFILES:-/app/env_files}
     volumes:
       # Mount the user's specific data directory to /app/env_files
       - ~/dockerhub/permadata/oys_contacts/env_files:/app/env_files
@@ -86,7 +87,7 @@ services:
       - PORT=4314
       - PUBLIC_URL=${PUBLIC_URL:-}
     volumes:
-      - ~/dockerhub/permadata/oys_uploads/dontknowescooter:/app/uploads
+      - ${DOCKER_FOLDER_WEBFILES}/dontknowescooter:/app/uploads
     ports:
       - "${DONTKNOWESCOOTER_PORT:-4314}:4314"
 
