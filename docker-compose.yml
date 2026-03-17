@@ -109,6 +109,7 @@ services:
       - OPS_FORWARDER_URL=http://ops-forwarder:4313/send-it
       - DONTKNOW_URL=http://dontknowescooter:4314
       - DONTKNOW_PUBLIC_URL=${DONTKNOW_PUBLIC_URL}
+      - PHOTOS_PUBLIC_BASE_URL=${PHOTOS_PUBLIC_BASE_URL}
     ports:
       - "${MESSAGE_ROUTER_PORT:-4300}:4300"
     depends_on:

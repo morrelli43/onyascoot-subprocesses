@@ -65,7 +65,7 @@ app.post('/submit', async (req, res) => {
     const nodeifierUrl     = process.env.NODEIFIER_URL       || 'http://nodeifier:4312/send-it';
     const opsForwarderUrl  = process.env.OPS_FORWARDER_URL   || 'http://ops-forwarder:4313/send-it';
     const dontknowUrl      = process.env.DONTKNOW_URL        || 'http://dontknowescooter:4314';
-    const dontknowPublicUrl = process.env.DONTKNOW_PUBLIC_URL || '';
+    const dontknowPublicUrl = process.env.DONTKNOW_PUBLIC_URL || process.env.PHOTOS_PUBLIC_BASE_URL || '';
 
     // Fan out requests in background
     console.log(`[Message Router] Routing to sub-processes...`);
