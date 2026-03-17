@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 4314;
 // ---------------------------------------------------------------------------
 // Upload directory
 // ---------------------------------------------------------------------------
-const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads', '4362tres');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
