@@ -198,16 +198,16 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           PORT=${SSH_PORT:-22}
-          CRED_DIR=~/dockerhub/permadata/oys_contacts/env_files
+          REMOTE_CRED_DIR="~/dockerhub/permadata/oys_contacts/env_files"
 
-          # Ensure destination exists
+          # Ensure destination exists on the remote server
           ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
-            $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $CRED_DIR"
+            $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $REMOTE_CRED_DIR"
 
           if [ -f .credentials/credentials.json ]; then
             scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
               .credentials/credentials.json \
-              $SSH_USERNAME@$SSH_HOST_URL:$CRED_DIR/credentials.json
+              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/credentials.json"
             echo "✅ credentials.json uploaded"
           else
             echo "⚠️ .credentials/credentials.json not found, skipping"
@@ -216,7 +216,7 @@ jobs:
           if [ -f .credentials/token.json ]; then
             scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
               .credentials/token.json \
-              $SSH_USERNAME@$SSH_HOST_URL:$CRED_DIR/token.json
+              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/token.json"
             echo "✅ token.json uploaded"
           else
             echo "⚠️ .credentials/token.json not found, skipping"
