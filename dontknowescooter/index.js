@@ -134,10 +134,11 @@ app.get('/photo-poll/:sessionId', (req, res) => {
     const session   = photoSessions.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const baseUrl = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
-    const photoUrls = session.photos.map(filename => ({
+    // PHOTOS_PUBLIC_BASE_URL = e.g. https://onyascoot.com/uploads/dontknowescooter
+    const photosBase = (process.env.PHOTOS_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    const photoUrls = session.photos.map((filename, i) => ({
         filename,
-        url: baseUrl ? `${baseUrl}/photo-file/${filename}` : null
+        url: photosBase ? `${photosBase}/${filename}` : null
     }));
 
     res.json({ count: session.photos.length, photos: session.photos, photoUrls });

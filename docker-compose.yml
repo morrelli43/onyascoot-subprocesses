@@ -86,6 +86,7 @@ services:
     environment:
       - PORT=4314
       - PUBLIC_URL=${PUBLIC_URL:-}
+      - PHOTOS_PUBLIC_BASE_URL=${PHOTOS_PUBLIC_BASE_URL:-}
     volumes:
       - ${DOCKER_FOLDER_WEBFILES}/dontknowescooter:/app/uploads
     ports:

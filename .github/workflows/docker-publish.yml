@@ -265,6 +265,7 @@ jobs:
           OPS_WEBHOOK_URL: ${{ vars.OPS_WEBHOOK_URL }}
           OPS_API_KEY_VAL: ${{ secrets.OPS_API_KEY }}
           DONTKNOW_PUBLIC_URL: ${{ vars.DONTKNOW_PUBLIC_URL }}
+          PHOTOS_PUBLIC_BASE_URL: ${{ vars.PHOTOS_PUBLIC_BASE_URL }}
 
         run: |
           # Define environment-specific variables
@@ -328,6 +329,7 @@ jobs:
             echo "OPS_WEBHOOK_URL=$OPS_WEBHOOK_URL" >> .env.subprocesses
             echo "OPS_API_KEY=$OPS_API_KEY_VAL" >> .env.subprocesses
             echo "DONTKNOW_PUBLIC_URL=$DONTKNOW_PUBLIC_URL" >> .env.subprocesses
+            echo "PHOTOS_PUBLIC_BASE_URL=$PHOTOS_PUBLIC_BASE_URL" >> .env.subprocesses
             echo "DOCKER_NETWORK_NAME=$NETWORK_NAME" >> .env.subprocesses
             # Expand ~ to absolute path so docker-compose volume mounts work
             EXPANDED_DOCKER_FOLDER=$(ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "echo $DOCKER_FOLDER_WEBFILES")
