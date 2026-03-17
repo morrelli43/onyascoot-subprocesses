@@ -135,7 +135,7 @@ app.get('/photo-poll/:sessionId', (req, res) => {
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     // Build URLs using PUBLIC_URL + /photo-file/ so they route through Express
-    const publicBase = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+    const publicBase = (process.env.PUBLIC_URL || process.env.DONTKNOW_PUBLIC_URL || '').replace(/\/$/, '');
     const photoUrls = session.photos.map((filename, i) => ({
         filename,
         url: publicBase ? `${publicBase}/photo-file/${filename}` : null

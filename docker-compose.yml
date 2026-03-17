@@ -85,7 +85,7 @@ services:
       - 1.1.1.1
     environment:
       - PORT=4314
-      - PUBLIC_URL=${PUBLIC_URL:-}
+      - PUBLIC_URL=${DONTKNOW_PUBLIC_URL:-}
       - PHOTOS_PUBLIC_BASE_URL=${PHOTOS_PUBLIC_BASE_URL:-}
     volumes:
       - ${DOCKER_FOLDER_WEBFILES}/dontknowescooter:/app/uploads/4362tres
