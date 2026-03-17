@@ -138,7 +138,7 @@ app.post('/submit', async (req, res) => {
                 const photoLinks = photos.map(p => `${p.num} (${p.url})`).join(', ');
                 lines.push(`Unknown: ${photoLinks}`);
             }
-            if (s.issue_extra) lines.push(s.issue_extra);
+            if (s.issue_extra) lines.push(`Issue Note: ${s.issue_extra}`);
         });
 
         const alertPayload = {
