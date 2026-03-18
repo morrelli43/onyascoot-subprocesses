@@ -54,6 +54,27 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: CACHE_BUST=${{ github.sha }}
 
+      - name: Extract metadata for booking-sync
+        id: meta_booking
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}_booking_sync
+          tags: |
+            type=ref,event=branch
+            type=sha,format=long
+
+      - name: Build and push booking-sync
+        uses: docker/build-push-action@v5
+        with:
+          context: ./booking-sync
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta_booking.outputs.tags }}
+          labels: ${{ steps.meta_booking.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: CACHE_BUST=${{ github.sha }}
+
       - name: Extract metadata for email-service
         id: meta_email
         uses: docker/metadata-action@v5
