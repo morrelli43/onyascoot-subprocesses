@@ -71,8 +71,22 @@ class SyncEngine:
         if booking.customer_id:
             if booking.customer_id not in self.customer_cache:
                 cust = self.square.get_customer_details(booking.customer_id)
-                self.customer_cache[booking.customer_id] = f"{cust.get('given_name', '')} {cust.get('family_name', '')}".strip() or "Customer"
-            booking.customer_name = self.customer_cache[booking.customer_id]
+                self.customer_cache[booking.customer_id] = cust
+            
+            cust_data = self.customer_cache[booking.customer_id]
+            booking.customer_name = f"{cust_data.get('given_name', '')} {cust_data.get('family_name', '')}".strip() or "Customer"
+            booking.customer_phone = cust_data.get('phone_number')
+            
+            # Address formatting
+            addr = cust_data.get('address', {})
+            addr_parts = [
+                addr.get('address_line_1'),
+                addr.get('address_line_2'),
+                addr.get('locality'), # City
+                addr.get('administrative_district_level_1'), # State
+                addr.get('postal_code')
+            ]
+            booking.customer_address = ", ".join([p for p in addr_parts if p]).strip()
             
         # Service
         if booking.service_id:

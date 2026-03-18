@@ -14,6 +14,7 @@ class Booking:
         self.customer_name: Optional[str] = "Customer"
         self.customer_email: Optional[str] = None
         self.customer_phone: Optional[str] = None
+        self.customer_address: Optional[str] = None
         
         self.service_id: Optional[str] = None
         self.service_name: Optional[str] = "Service"
@@ -45,7 +46,8 @@ class Booking:
             'status': self.status,
             'notes': self.notes,
             'google_event_id': self.google_event_id,
-            'location': self.location
+            'location': self.location,
+            'customer_address': self.customer_address
         }
 
     @staticmethod
@@ -61,6 +63,7 @@ class Booking:
         booking.notes = data.get('notes')
         booking.google_event_id = data.get('google_event_id')
         booking.location = data.get('location')
+        booking.customer_address = data.get('customer_address')
         
         if data.get('start_at'):
             booking.start_at = datetime.fromisoformat(data['start_at'])

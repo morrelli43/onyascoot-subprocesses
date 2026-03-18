@@ -77,10 +77,23 @@ class GoogleCalendarConnector:
         if not self.service:
             self.authenticate()
             
+        # Determine location for navigation
+        location = booking.customer_address or booking.location
+        
+        # Build description with contact info
+        description_parts = [
+            f"Customer: {booking.customer_name}",
+            f"Phone: {booking.customer_phone or 'N/A'}",
+            f"Address: {booking.customer_address or 'N/A'}",
+            f"Service: {booking.service_name}",
+            f"Square Booking ID: {booking.booking_id}",
+            f"\nNotes: {booking.notes}" if booking.notes else ""
+        ]
+        
         event_body = {
             'summary': booking.summary,
-            'location': booking.location,
-            'description': f"Square Booking ID: {booking.booking_id}\n\n{booking.notes}",
+            'location': location,
+            'description': "\n".join(description_parts),
             'start': {
                 'dateTime': booking.start_at.isoformat(),
                 'timeZone': 'Australia/Melbourne', # Default for user, should ideally be dynamic
