@@ -72,26 +72,18 @@ class SquareBookingConnector:
         if start_at:
             booking.start_at = datetime.fromisoformat(start_at.replace('Z', '+00:00'))
             
-        # Duration / End Time (Square might not provide end_at explicitly in all cases, but usually does)
-        # It has appointment_segments
+        # Segments and Services
         segments = sb.get('appointment_segments', [])
+        booking.service_ids = [s.get('service_variation_id') for s in segments if s.get('service_variation_id')]
+        
         if segments:
-            # Sum up durations or find the latest end_at?
-            # Usually the booking itself has an end_at? No, let's check segments.
-            # Actually, the base booking object doesn't always have end_at.
-            # But it has it in recent versions or we can calculate.
-            # Square docs: start_at is the start time.
-            # Many segments have duration_minutes.
             total_duration = sum(s.get('duration_minutes', 0) for s in segments)
             if booking.start_at:
                 from datetime import timedelta
                 booking.end_at = booking.start_at + timedelta(minutes=total_duration)
             
-            # Get Service Name from first segment's service_variation_id?
-            # Need to fetch service catalog if we want names...
-            # For now, let's just use segment metadata if present.
-            booking.service_id = segments[0].get('service_variation_id')
-            # service_name will need to be enriched later or fetched if possible.
+            # Primary service ID for legacy support/summary
+            booking.service_id = booking.service_ids[0] if booking.service_ids else None
         
         # Customer
         booking.customer_id = sb.get('customer_id')

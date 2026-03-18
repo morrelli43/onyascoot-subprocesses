@@ -80,13 +80,16 @@ class GoogleCalendarConnector:
         # Determine location for navigation
         location = booking.customer_address or booking.location
         
-        # Build description with contact info
+        # Build Job Summary description
         description_parts = [
+            "--- JOB SUMMARY ---",
+            f"Price: ${booking.total_price:.2f}",
+            f"eScooter: {booking.escooter or 'N/A'}",
+            f"Services: {', '.join(booking.services_list) or booking.service_name}",
+            "\n--- CONTACT INFO ---",
             f"Customer: {booking.customer_name}",
             f"Phone: {booking.customer_phone or 'N/A'}",
             f"Address: {booking.customer_address or 'N/A'}",
-            f"Service: {booking.service_name}",
-            f"Square Booking ID: {booking.booking_id}",
             f"\nNotes: {booking.notes}" if booking.notes else ""
         ]
         
@@ -96,7 +99,7 @@ class GoogleCalendarConnector:
             'description': "\n".join(description_parts),
             'start': {
                 'dateTime': booking.start_at.isoformat(),
-                'timeZone': 'Australia/Melbourne', # Default for user, should ideally be dynamic
+                'timeZone': 'Australia/Melbourne',
             },
             'end': {
                 'dateTime': booking.end_at.isoformat(),

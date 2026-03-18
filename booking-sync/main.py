@@ -88,16 +88,60 @@ class SyncEngine:
             ]
             booking.customer_address = ", ".join([p for p in addr_parts if p]).strip()
             
-        # Service
-        if booking.service_id:
-            if booking.service_id not in self.service_cache:
-                svc = self.square.get_service_details(booking.service_id)
-                # Catalog object 'item_variation_data' -> item_id or directly variation name?
-                # Usually we want the item name.
-                variation_data = svc.get('item_variation_data', {})
-                name = variation_data.get('name', 'Service')
-                self.service_cache[booking.service_id] = name
-            booking.service_name = self.service_cache[booking.service_id]
+        # Services & Price
+        booking.services_list = []
+        booking.total_price = 0.0
+        
+        for svc_id in getattr(booking, 'service_ids', [booking.service_id]):
+            if not svc_id: continue
+            
+            if svc_id not in self.service_cache:
+                svc_obj = self.square.get_service_details(svc_id)
+                self.service_cache[svc_id] = svc_obj
+            
+            svc = self.service_cache[svc_id]
+            if svc:
+                var_data = svc.get('item_variation_data', {})
+                name = var_data.get('name', 'Service')
+                booking.services_list.append(name)
+                
+                # Price
+                price_money = var_data.get('price_money', {})
+                if price_money:
+                    booking.total_price += float(price_money.get('amount', 0)) / 100.0
+        
+        # Set primary service name for summary
+        if booking.services_list:
+            booking.service_name = booking.services_list[0]
+            if len(booking.services_list) > 1:
+                booking.service_name += f" (+{len(booking.services_list)-1} more)"
+
+        # eScooter Extraction from notes
+        if booking.notes:
+            notes_lower = booking.notes.lower()
+            escooter = None
+            
+            # Look for specific prefixes
+            for prefix in ['scooter:', 'escooter:', 'model:', 'bike:']:
+                if prefix in notes_lower:
+                    start = notes_lower.find(prefix) + len(prefix)
+                    line = booking.notes[start:].split('\n')[0].strip()
+                    if line:
+                        escooter = line
+                        break
+            
+            # If no prefix, check common brands
+            if not escooter:
+                brands = ['xiaomi', 'segway', 'ninebot', 'apollo', 'vsett', 'kaabo', 'dualtron', 'innokim', 'unagi', 'niu', 'hiboy', 'gotrax']
+                for brand in brands:
+                    if brand in notes_lower:
+                        for line in booking.notes.split('\n'):
+                            if brand in line.lower():
+                                escooter = line.strip()
+                                break
+                        if escooter: break
+            
+            booking.escooter = escooter or "Unknown eScooter"
 
 def run_sync_loop(engine, interval_secs):
     """Background thread to perform periodic full-sync loops."""

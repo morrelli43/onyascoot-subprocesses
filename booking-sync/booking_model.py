@@ -18,6 +18,10 @@ class Booking:
         
         self.service_id: Optional[str] = None
         self.service_name: Optional[str] = "Service"
+        self.service_ids: List[str] = []
+        self.services_list: List[str] = []
+        self.total_price: float = 0.0
+        self.escooter: Optional[str] = None
         
         self.start_at: Optional[datetime] = None
         self.end_at: Optional[datetime] = None
@@ -47,7 +51,11 @@ class Booking:
             'notes': self.notes,
             'google_event_id': self.google_event_id,
             'location': self.location,
-            'customer_address': self.customer_address
+            'customer_address': self.customer_address,
+            'total_price': self.total_price,
+            'escooter': self.escooter,
+            'services_list': self.services_list,
+            'service_ids': self.service_ids
         }
 
     @staticmethod
@@ -64,6 +72,10 @@ class Booking:
         booking.google_event_id = data.get('google_event_id')
         booking.location = data.get('location')
         booking.customer_address = data.get('customer_address')
+        booking.total_price = data.get('total_price', 0.0)
+        booking.escooter = data.get('escooter')
+        booking.services_list = data.get('services_list', [])
+        booking.service_ids = data.get('service_ids', [])
         
         if data.get('start_at'):
             booking.start_at = datetime.fromisoformat(data['start_at'])
