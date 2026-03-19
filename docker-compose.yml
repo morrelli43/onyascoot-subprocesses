@@ -124,6 +124,21 @@ services:
       - nodeifier
       - ops-forwarder
 
+  sms-gateway:
+    build: ./sms-gateway
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_sms_gateway:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    environment:
+      - SMS_GATEWAY_API_KEY=${SMS_GATEWAY_API_KEY}
+      - WEB_PORTAL_INCOMING_URL=${WEB_PORTAL_INCOMING_URL}
+      - PORT=4330
+    ports:
+      - "${SMS_GATEWAY_PORT:-4330}:4330"
+
 networks:
   default:
     name: ${DOCKER_NETWORK_NAME:-oys_frontend_live_net}

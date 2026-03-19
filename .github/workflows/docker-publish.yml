@@ -180,6 +180,27 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: CACHE_BUST=${{ github.sha }}
 
+      - name: Extract metadata for sms-gateway
+        id: meta_sms_gateway
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}_sms_gateway
+          tags: |
+            type=ref,event=branch
+            type=sha,format=long
+
+      - name: Build and push sms-gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: ./sms-gateway
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta_sms_gateway.outputs.tags }}
+          labels: ${{ steps.meta_sms_gateway.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: CACHE_BUST=${{ github.sha }}
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -303,6 +324,9 @@ jobs:
           OPS_API_KEY_VAL: ${{ secrets.OPS_API_KEY }}
           DONTKNOW_PUBLIC_URL: ${{ vars.DONTKNOW_PUBLIC_URL }}
           PHOTOS_PUBLIC_BASE_URL: ${{ vars.PHOTOS_PUBLIC_BASE_URL }}
+          SMS_GATEWAY_PORT: ${{ vars.SMS_GATEWAY_PORT }}
+          SMS_GATEWAY_API_KEY_VAL: ${{ secrets.SMS_GATEWAY_API_KEY }}
+          WEB_PORTAL_INCOMING_URL_VAL: ${{ vars.WEB_PORTAL_INCOMING_URL }}
 
         run: |
           # Define environment-specific variables
@@ -369,6 +393,9 @@ jobs:
             echo "PHOTOS_PUBLIC_BASE_URL=$PHOTOS_PUBLIC_BASE_URL" >> .env.subprocesses
             echo "DOCKER_NETWORK_NAME=$NETWORK_NAME" >> .env.subprocesses
             echo "DOCKER_FOLDER_WEBFILES=$DOCKER_FOLDER_WEBFILES" >> .env.subprocesses
+            echo "SMS_GATEWAY_PORT=$SMS_GATEWAY_PORT" >> .env.subprocesses
+            echo "SMS_GATEWAY_API_KEY=$SMS_GATEWAY_API_KEY_VAL" >> .env.subprocesses
+            echo "WEB_PORTAL_INCOMING_URL=$WEB_PORTAL_INCOMING_URL_VAL" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."
