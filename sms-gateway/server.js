@@ -29,13 +29,19 @@ server.on('upgrade', (request, socket, head) => {
   const authHeader = request.headers['authorization'];
   const deviceId = request.headers['x-device-id'];
 
+  console.log(`📡 WebSocket Upgrade request: ${request.url}`);
+  // Uncomment for deep debugging:
+  // console.log('Current Headers:', JSON.stringify(request.headers, null, 2));
+
   if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== API_KEY) {
+    console.log(`❌ WS Auth Failed from ${request.url}`);
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }
 
   if (!deviceId) {
+    console.log(`❌ WS Missing X-Device-ID from ${request.url}`);
     socket.write('HTTP/1.1 400 Bad Request: Missing X-Device-ID\r\n\r\n');
     socket.destroy();
     return;
