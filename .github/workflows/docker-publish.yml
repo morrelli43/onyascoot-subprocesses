@@ -223,6 +223,13 @@ jobs:
           # Remove trailing slash from DOCKER_FOLDER_WEBFILES if present
           WEBFILES_DIR="${DOCKER_FOLDER_WEBFILES%/}"
           REMOTE_CRED_DIR="${WEBFILES_DIR:-deployments/oys_subprocesses}/oys_contacts/env_files"
+          
+          echo "Debug: REMOTE_CRED_DIR is $REMOTE_CRED_DIR"
+          echo "Debug: SSH_USERNAME is $SSH_USERNAME"
+
+          # Diagnostic info
+          ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+            $SSH_USERNAME@$SSH_HOST_URL "echo 'Current User:' && whoami && echo 'Directory Permissions:' && ls -ld $REMOTE_CRED_DIR || echo 'Directory does not exist' && ls -ld \$(dirname $REMOTE_CRED_DIR)"
 
           # Ensure destination exists on the remote server
           ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
