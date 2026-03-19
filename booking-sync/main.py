@@ -120,15 +120,19 @@ class SyncEngine:
 
         # eScooter Extraction (Prefer eScooter1 custom field)
         escooter = None
-        if cust_data and 'custom_attribute_values' in cust_data:
-            # Check for eScooter1 (key can be a UUID or a slug depending on setup, but often maps to slug)
-            # We look for any attribute with "escooter" in the name or key
-            for key, attr in cust_data.get('custom_attribute_values', {}).items():
-                if 'escooter' in key.lower():
-                    val = attr.get('value')
-                    if val:
-                        escooter = val
-                        break
+        
+        # Check custom attributes (now requires a separate call in this SDK version)
+        if booking.customer_id:
+            attrs = self.square.get_customer_custom_attributes(booking.customer_id)
+            if attrs:
+                # Look for eScooter1 (key often maps to 'eScooter1' slug)
+                # We look for any attribute with "escooter" in the name or key
+                for key, attr in attrs.items():
+                    if 'escooter' in key.lower():
+                        val = attr.get('value')
+                        if val:
+                            escooter = val
+                            break
         
         # Fallback to extraction from notes
         if not escooter and booking.notes:

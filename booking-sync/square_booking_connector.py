@@ -102,14 +102,33 @@ class SquareBookingConnector:
     def get_customer_details(self, customer_id: str) -> dict:
         """Fetch customer details from Square."""
         try:
-            result = self.client.customers.retrieve_customer(
-                customer_id=customer_id,
-                include_custom_attributes=True
-            )
+            result = self.client.customers.retrieve_customer(customer_id=customer_id)
             if result.is_success():
                 return result.body.get('customer', {})
         except Exception as e:
             print(f"Error fetching customer {customer_id}: {e}")
+        return {}
+        
+    def get_customer_custom_attributes(self, customer_id: str) -> dict:
+        """Fetch custom attributes for a customer."""
+        try:
+            # Note: This might require specific SDK support or a separate API call.
+            # In Square SDK v2 (around 30.x), this is usually under customer_custom_attributes.
+            if hasattr(self.client, 'customer_custom_attributes'):
+                result = self.client.customer_custom_attributes.list_customer_custom_attributes(
+                    customer_id=customer_id,
+                    with_definitions=True
+                )
+                if result.is_success():
+                    # Return mapped attributes
+                    return {attr.get('key'): attr for attr in result.body.get('custom_attributes', [])}
+            elif hasattr(self.client.customers, 'list_customer_custom_attributes'):
+                # Some SDK versions have it here
+                result = self.client.customers.list_customer_custom_attributes(customer_id=customer_id)
+                if result.is_success():
+                    return {attr.get('key'): attr for attr in result.body.get('custom_attributes', [])}
+        except Exception as e:
+            print(f"  ⚠️ Warning: Could not fetch custom attributes for customer {customer_id}: {e}")
         return {}
         
     def get_service_details(self, service_variation_id: str) -> dict:
