@@ -101,6 +101,11 @@ server.on('upgrade', (request, socket, head) => {
  * Relay Endpoint: Web Portal -> Phone
  */
 app.post('/api/send-sms', (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { deviceId, address, body } = req.body;
 
   if (!deviceId || !address || !body) {
