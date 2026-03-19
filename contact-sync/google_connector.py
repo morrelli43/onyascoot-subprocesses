@@ -42,17 +42,29 @@ class GoogleContactsConnector:
         
         # Load existing token
         if os.path.exists(self.token_file):
-            creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
+            if os.path.getsize(self.token_file) == 0:
+                print(f"  ⚠️ Warning: Token file {self.token_file} is empty.")
+                # Force re-authentication or re-generation
+            else:
+                try:
+                    creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
+                except Exception as e:
+                    print(f"  ⚠️ Error loading token from {self.token_file}: {e}")
         
         # Refresh or get new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(self.credentials_file):
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"  ⚠️ Error refreshing token: {e}")
+                    creds = None # Force re-auth
+            
+            if not creds:
+                if not os.path.exists(self.credentials_file) or os.path.getsize(self.credentials_file) == 0:
                     raise FileNotFoundError(
-                        f"Credentials file not found: {self.credentials_file}. "
-                        "Download from Google Cloud Console."
+                        f"Credentials file {self.credentials_file} is missing or empty. "
+                        "Check your GitHub Secrets and deployment logs."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_file, self.SCOPES)
