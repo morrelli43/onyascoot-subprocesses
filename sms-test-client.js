@@ -3,14 +3,14 @@ const WebSocket = require('ws');
 // CONFIGURATION
 const API_KEY = 'tVBTaBYsSZijbXP6gXgI2t46TBwMxswn';
 const DEVICE_ID = 'ONYA_TEST_DEVICE_01';
-const WS_URL = 'wss://portal.onyascoot.com/sms-relay'; // Removed trailing slash
+const WS_URL = `wss://portal.onyascoot.com/sms-relay/?apiKey=${API_KEY}&deviceId=${DEVICE_ID}`;
 
-console.log(`🔗 Connecting to ${WS_URL}...`);
+console.log(`🔗 Connecting to ${WS_URL.split('?')[0]} (with credentials in query)...`);
 
 const ws = new WebSocket(WS_URL, {
   headers: {
     'authorization': `Bearer ${API_KEY}`,
-    'x-device-id': DEVICE_ID // Use lowercase keys for headers
+    'x-device-id': DEVICE_ID
   }
 });
 

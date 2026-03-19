@@ -26,23 +26,30 @@ const wss = new WebSocket.Server({ noServer: true });
  * WebSocket Authentication and Handshake
  */
 server.on('upgrade', (request, socket, head) => {
+  const urlParams = new URL(request.url, `http://${request.headers.host}`).searchParams;
+  
   const authHeader = request.headers['authorization'];
-  const deviceId = request.headers['x-device-id'];
+  const headerApiKey = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const headerDeviceId = request.headers['x-device-id'];
+
+  const queryApiKey = urlParams.get('apiKey');
+  const queryDeviceId = urlParams.get('deviceId');
+
+  const apiKey = queryApiKey || headerApiKey;
+  const deviceId = queryDeviceId || headerDeviceId;
 
   console.log(`📡 WebSocket Upgrade request: ${request.url}`);
-  // Uncomment for deep debugging:
-  // console.log('Current Headers:', JSON.stringify(request.headers, null, 2));
 
-  if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== API_KEY) {
-    console.log(`❌ WS Auth Failed from ${request.url}`);
+  if (!apiKey || apiKey !== API_KEY) {
+    console.log(`❌ WS Auth Failed (Key mismatch or missing)`);
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }
 
   if (!deviceId) {
-    console.log(`❌ WS Missing X-Device-ID from ${request.url}`);
-    socket.write('HTTP/1.1 400 Bad Request: Missing X-Device-ID\r\n\r\n');
+    console.log(`❌ WS Missing Device ID`);
+    socket.write('HTTP/1.1 400 Bad Request: Missing Device ID\r\n\r\n');
     socket.destroy();
     return;
   }
