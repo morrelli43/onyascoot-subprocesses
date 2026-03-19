@@ -225,23 +225,37 @@ jobs:
           # Ensure destination exists on the remote server
           ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
             $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $REMOTE_CRED_DIR"
+           # Create credentials directory if not present
+          mkdir -p oys_contacts/env_files
+
+          # Write secrets to files
+          if [ -n "${{ secrets.GOOGLE_TOKEN_JSON }}" ]; then
+            echo '${{ secrets.GOOGLE_TOKEN_JSON }}' > oys_contacts/env_files/token.json
+            echo "✅ token.json extracted from secrets"
+          fi
+
+          if [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
+            echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > oys_contacts/env_files/credentials.json
+            echo "✅ credentials.json extracted from secrets"
+          fi
+
+          # Upload to server
+          if [ -f oys_contacts/env_files/token.json ]; then
+            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+              oys_contacts/env_files/token.json \
+              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/token.json"
+            echo "🚀 token.json pushed to server"
+          else
+            echo "⚠️ GOOGLE_TOKEN_JSON secret missing!"
+          fi
 
           if [ -f oys_contacts/env_files/credentials.json ]; then
             scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
               oys_contacts/env_files/credentials.json \
               "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/credentials.json"
-            echo "✅ credentials.json uploaded"
+            echo "🚀 credentials.json pushed to server"
           else
-            echo "⚠️ oys_contacts/env_files/credentials.json not found, skipping"
-          fi
-
-          if [ -f oys_contacts/env_files/token.json ]; then
-            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
-              oys_contacts/env_files/token.json \
-              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/token.json"
-            echo "✅ token.json uploaded"
-          else
-            echo "⚠️ oys_contacts/env_files/token.json not found, skipping"
+            echo "⚠️ GOOGLE_CREDENTIALS_JSON secret missing!"
           fi
 
       - name: Deploy to Raspberry Pi
