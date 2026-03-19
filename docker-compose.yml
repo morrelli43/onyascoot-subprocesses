@@ -1,6 +1,5 @@
 services:
   contact-sync:
-    container_name: contact-sync
     build: ./contact-sync
     image: ghcr.io/morrelli43/onyascoot-subprocesses:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -20,7 +19,6 @@ services:
       - "${CONTACT_SYNC_PORT:-4310}:4310"
 
   booking-sync:
-    container_name: booking-sync
     build: ./booking-sync
     image: ghcr.io/morrelli43/onyascoot-subprocesses_booking_sync:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -35,7 +33,6 @@ services:
       - contact-sync
 
   email-service:
-    container_name: email-service
     build: ./email-service
     image: ghcr.io/morrelli43/onyascoot-subprocesses_email_service:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -57,7 +54,6 @@ services:
       - contact-sync
 
   nodeifier:
-    container_name: nodeifier
     build: ./nodeifier
     image: ghcr.io/morrelli43/onyascoot-subprocesses_nodeifier:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -72,7 +68,6 @@ services:
       - "${NODEIFIER_SERVICE_PORT:-4312}:4312"
 
   ops-forwarder:
-    container_name: ops-forwarder
     build: ./ops-forwarder
     image: ghcr.io/morrelli43/onyascoot-subprocesses_ops_forwarder:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -88,7 +83,6 @@ services:
       - "${OPS_FORWARDER_PORT:-4313}:4313"
 
   dontknowescooter:
-    container_name: dontknowescooter
     build: ./dontknowescooter
     image: ghcr.io/morrelli43/onyascoot-subprocesses_dontknowescooter:${IMAGE_TAG:-main}
     restart: unless-stopped
@@ -106,7 +100,6 @@ services:
       - "${DONTKNOWESCOOTER_PORT:-4314}:4314"
 
   message-router:
-    container_name: message-router
     build: ./message-router
     image: ghcr.io/morrelli43/onyascoot-subprocesses_message_router:${IMAGE_TAG:-main}
     restart: unless-stopped
