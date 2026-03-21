@@ -9,6 +9,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 4330;
 const API_KEY = process.env.SMS_GATEWAY_API_KEY;
+const OPS_API_KEY = process.env.OPS_API_KEY;
 const WEB_PORTAL_INCOMING_URL = process.env.WEB_PORTAL_INCOMING_URL;
 
 if (!API_KEY) {
@@ -76,10 +77,24 @@ server.on('upgrade', (request, socket, head) => {
         // Forward and log notification if configured
         if (WEB_PORTAL_INCOMING_URL) {
           try {
-            await axios.post(WEB_PORTAL_INCOMING_URL, {
-              deviceId,
-              payload: data
-            });
+            // Map device payload to Onyascoot Operations format
+            // data format: { type: 'incoming_sms', from: '+61400...', text: '...' }
+            const forwardData = {
+              address: data.from,
+              body: data.text,
+              direction: 'inbound'
+            };
+
+            const headers = {
+              'Content-Type': 'application/json'
+            };
+
+            // Use OPS_API_KEY if available for Bearer authentication
+            if (OPS_API_KEY) {
+              headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
+            }
+
+            await axios.post(WEB_PORTAL_INCOMING_URL, forwardData, { headers });
             console.log(`🚀 Forwarded to web portal: ${WEB_PORTAL_INCOMING_URL}`);
           } catch (err) {
             console.error(`❌ Error forwarding to web portal: ${err.message}`);
