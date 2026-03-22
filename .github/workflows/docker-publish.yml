@@ -87,7 +87,8 @@ jobs:
       - name: Build and push booking-webhook
         uses: docker/build-push-action@v5
         with:
-          context: ./booking-sync/webhook
+          context: ./booking-sync
+          file: ./booking-sync/webhook/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_booking_webhook.outputs.tags }}

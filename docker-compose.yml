@@ -140,7 +140,9 @@ services:
       - "${SMS_GATEWAY_PORT:-4330}:4330"
 
   booking-webhook:
-    build: ./booking-sync/webhook
+    build:
+      context: ./booking-sync
+      dockerfile: webhook/Dockerfile
     image: ghcr.io/morrelli43/onyascoot-subprocesses_booking_webhook:${IMAGE_TAG:-main}
     restart: unless-stopped
     environment:
