@@ -9,10 +9,39 @@ from typing import Dict
 from booking_model import Booking
 from square_booking_connector import SquareBookingConnector
 from google_calendar_connector import GoogleCalendarConnector
-
-
 import argparse
 import threading
+from flask import Flask, request, jsonify
+
+class WebhookServer:
+    """Flask app to receive Square booking webhooks and trigger sync."""
+    def __init__(self, engine, port=5001):
+        self.app = Flask(__name__)
+        self.engine = engine
+        self.port = port
+        
+        # Register routes
+        self.app.route('/square-webhook', methods=['POST'])(self.square_webhook)
+        self.app.route('/webhooks/square', methods=['POST'])(self.square_webhook)
+        self.app.route('/<path:path>', methods=['POST', 'GET'])(self.catch_all)
+
+    def square_webhook(self):
+        event = request.json
+        print(f"[WEBHOOK] Received event: {event}")
+        if event and event.get('type', '').startswith('booking.'):
+            print(f"[WEBHOOK] Triggering booking sync for event type: {event.get('type')}")
+            threading.Thread(target=self.engine.sync_upcoming).start()
+        return jsonify({'status': 'ok'})
+
+    def catch_all(self, path):
+        print(f"[WEBHOOK-DEBUG] Received request on unknown path: /{path}")
+        if request.is_json:
+            print(f"[WEBHOOK-DEBUG] Payload: {request.json}")
+        return jsonify({'status': 'ignored', 'path': path}), 404
+
+    def run(self, host='0.0.0.0'):
+        print(f"\n[WebhookServer] Starting listener on {host}:{self.port}")
+        self.app.run(host=host, port=self.port, debug=False)
 
 class SyncEngine:
     """Orchestrates the sync between Square and Google Calendar."""
@@ -193,7 +222,16 @@ if __name__ == "__main__":
     
     if args.command == 'serve':
         interval = int(os.getenv('SYNC_INTERVAL', '3600')) # Every hour by default
-        run_sync_loop(engine, interval)
+        
+        # Start background polling loop via thread
+        t = threading.Thread(target=run_sync_loop, args=(engine, interval), daemon=True)
+        t.start()
+        
+        # Start the Flask webhook listeners blocking the main thread
+        port = int(os.getenv('PORT', '5001'))
+        server = WebhookServer(engine, port=port)
+        server.run(host='0.0.0.0')
+        
     elif args.command == 'sync':
         engine.sync_upcoming()
 

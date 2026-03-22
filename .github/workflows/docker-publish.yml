@@ -54,45 +54,23 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: CACHE_BUST=${{ github.sha }}
 
-      - name: Extract metadata for booking-sync
-        id: meta_booking
+      - name: Extract metadata for calendar-sync
+        id: meta_calendar
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}_booking_sync
+          images: ${{ env.REGISTRY }}/${{ github.repository }}_calendar_sync
           tags: |
             type=ref,event=branch
             type=sha,format=long
 
-      - name: Build and push booking-sync
+      - name: Build and push calendar-sync
         uses: docker/build-push-action@v5
         with:
-          context: ./booking-sync
+          context: ./calendar-sync
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_booking.outputs.tags }}
-          labels: ${{ steps.meta_booking.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: CACHE_BUST=${{ github.sha }}
-
-      - name: Extract metadata for booking-webhook
-        id: meta_booking_webhook
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}_booking_webhook
-          tags: |
-            type=ref,event=branch
-            type=sha,format=long
-
-      - name: Build and push booking-webhook
-        uses: docker/build-push-action@v5
-        with:
-          context: ./booking-sync
-          file: ./booking-sync/webhook/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_booking_webhook.outputs.tags }}
-          labels: ${{ steps.meta_booking_webhook.outputs.labels }}
+          tags: ${{ steps.meta_calendar.outputs.tags }}
+          labels: ${{ steps.meta_calendar.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: CACHE_BUST=${{ github.sha }}
