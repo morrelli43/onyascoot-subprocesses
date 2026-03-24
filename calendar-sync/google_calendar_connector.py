@@ -109,16 +109,19 @@ class GoogleCalendarConnector:
         # Determine location for navigation
         location = booking.customer_address or booking.location
         
-        # Filter "Commuter eScooter" from services list
-        filtered_services = [s.replace("Commuter eScooter", "").strip(" -") for s in booking.services_list]
-        primary_service = booking.service_name.replace("Commuter eScooter", "").strip(" -")
+        # Build Itinerary
+        itinerary = []
+        for service in booking.services_list:
+            itinerary.append(f"• {service}")
+        itinerary_str = "\n".join(itinerary) if itinerary else "None"
         
         # Build Job Summary description
         description_parts = [
             "--- JOB SUMMARY ---",
             f"Price: ${booking.total_price:.2f}",
             f"eScooter: {booking.escooter or 'N/A'}",
-            f"Services: {', '.join(filtered_services) or primary_service}",
+            f"\n--- SERVICES & ITEMS ---",
+            itinerary_str,
             "\n--- CONTACT INFO ---",
             f"Customer: {booking.customer_name}",
             f"Phone: {booking.customer_phone or 'N/A'}",

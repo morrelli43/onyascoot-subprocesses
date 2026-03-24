@@ -138,7 +138,15 @@ class SyncEngine:
             svc = self.service_cache[svc_id]
             if svc:
                 var_data = svc.get('item_variation_data', {})
-                name = var_data.get('name', 'Service')
+                parent_name = svc.get('parent_name')
+                var_name = var_data.get('name', '')
+                
+                # Combine parent and variation cleanly
+                if parent_name and var_name and var_name.lower() not in ['regular', 'standard', 'base']:
+                    name = f"{parent_name} ({var_name})"
+                else:
+                    name = parent_name or var_name or "Service"
+                    
                 booking.services_list.append(name)
                 
                 # Price

@@ -132,13 +132,26 @@ class SquareBookingConnector:
         return {}
         
     def get_service_details(self, service_variation_id: str) -> dict:
-        """Fetch service details from Catalog."""
+        """Fetch service details from Catalog, including the parent item."""
         try:
-            result = self.client.catalog.retrieve_catalog_object(object_id=service_variation_id)
+            result = self.client.catalog.retrieve_catalog_object(
+                object_id=service_variation_id,
+                include_related_objects=True
+            )
             if result.is_success():
                 obj = result.body.get('object', {})
-                # It's a item_variation, we want the item name probably.
+                related = result.body.get('related_objects', [])
+                
+                # The object is an ITEM_VARIATION. We need its parent ITEM name.
+                parent_id = obj.get('item_variation_data', {}).get('item_id')
+                parent_item = next((r for r in related if r.get('id') == parent_id), None)
+                
+                # Attach parent item name to the object for easy access
+                if parent_item:
+                    obj['parent_name'] = parent_item.get('item_data', {}).get('name')
+                    
                 return obj
         except Exception as e:
             print(f"Error fetching service {service_variation_id}: {e}")
         return {}
+
