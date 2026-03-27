@@ -30,7 +30,13 @@ class WebhookServer:
         print(f"[WEBHOOK] Received event: {event}")
         if event and event.get('type', '').startswith('booking.'):
             print(f"[WEBHOOK] Triggering booking sync for event type: {event.get('type')}")
-            threading.Thread(target=self.engine.sync_upcoming).start()
+            
+            # Delay the sync slightly to ensure Square's API returns the up-to-date state
+            def delayed_sync():
+                time.sleep(2)
+                self.engine.sync_upcoming()
+                
+            threading.Thread(target=delayed_sync).start()
         return jsonify({'status': 'ok'})
 
     def catch_all(self, path):
@@ -147,7 +153,9 @@ class SyncEngine:
                 else:
                     name = parent_name or var_name or "Service"
                     
-                booking.services_list.append(name)
+                # Filter out Mobile Callout Fee entirely
+                if "mobile callout" not in name.lower():
+                    booking.services_list.append(name)
                 
                 # Price
                 price_money = var_data.get('price_money', {})
@@ -171,7 +179,7 @@ class SyncEngine:
                 # We look for any attribute with "escooter" in the name or key
                 for key, attr in attrs.items():
                     if 'escooter' in key.lower():
-                        val = attr.get('value')
+                        val = attr.get('value') or attr.get('string_value')
                         if val:
                             escooter = val
                             break

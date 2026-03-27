@@ -116,17 +116,16 @@ class SquareBookingConnector:
             # In Square SDK v2 (around 30.x), this is usually under customer_custom_attributes.
             if hasattr(self.client, 'customer_custom_attributes'):
                 result = self.client.customer_custom_attributes.list_customer_custom_attributes(
-                    customer_id=customer_id,
-                    with_definitions=True
+                    customer_id=customer_id
                 )
                 if result.is_success():
                     # Return mapped attributes
-                    return {attr.get('key'): attr for attr in result.body.get('custom_attributes', [])}
+                    return {attr.get('key', ''): attr for attr in result.body.get('custom_attributes', [])}
             elif hasattr(self.client.customers, 'list_customer_custom_attributes'):
                 # Some SDK versions have it here
                 result = self.client.customers.list_customer_custom_attributes(customer_id=customer_id)
                 if result.is_success():
-                    return {attr.get('key'): attr for attr in result.body.get('custom_attributes', [])}
+                    return {attr.get('key', ''): attr for attr in result.body.get('custom_attributes', [])}
         except Exception as e:
             print(f"  ⚠️ Warning: Could not fetch custom attributes for customer {customer_id}: {e}")
         return {}
