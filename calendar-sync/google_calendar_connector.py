@@ -119,12 +119,17 @@ class GoogleCalendarConnector:
         description_parts = [
             "---- CONTACT INFO ----",
             f"{booking.customer_name or 'N/A'}",
-            f"{booking.customer_phone or 'N/A'}",
-            f"{booking.customer_email or 'N/A'}",
+            f"{booking.customer_phone or 'N/A'}"
+        ]
+        
+        if booking.customer_email:
+            description_parts.append(booking.customer_email)
+            
+        description_parts.extend([
             "",
             f"---- SERVICES (${booking.total_price:.2f}) ----",
             itinerary_str
-        ]
+        ])
         
         if booking.notes:
             description_parts.extend(["", booking.notes])
