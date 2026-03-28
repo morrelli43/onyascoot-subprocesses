@@ -137,6 +137,7 @@ services:
       - 1.1.1.1
     environment:
       - SMS_GATEWAY_API_KEY=${SMS_GATEWAY_API_KEY}
+      - OPS_API_KEY=${OPS_API_KEY}
       - WEB_PORTAL_INCOMING_URL=${WEB_PORTAL_INCOMING_URL}
       - PORT=4330
     ports:
