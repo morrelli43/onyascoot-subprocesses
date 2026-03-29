@@ -74,32 +74,31 @@ server.on('upgrade', (request, socket, head) => {
         const data = JSON.parse(message);
         console.log(`📩 Message from device ${deviceId}:`, data);
 
-        // Forward and log notification if configured
-        if (WEB_PORTAL_INCOMING_URL) {
-          try {
-            // Map device payload to Onyascoot Operations format
-            // data format: { type: 'incoming_sms', from: '+61400...', text: '...' }
-            const forwardData = {
-              address: data.from,
-              body: data.text,
-              direction: 'inbound'
-            };
+        // Always attempt to forward the notification
+        const targetUrl = WEB_PORTAL_INCOMING_URL || 'http://onya-operations-live-app:3000/api/webhooks/sms';
+        try {
+          // Map device payload to Onyascoot Operations format, but preserve everything!
+          // This prevents complete rejection if the Android app schema changes.
+          const forwardData = {
+            address: data.from || data.address || data.sender,
+            body: data.text || data.body || data.message || data.snippet,
+            direction: 'inbound',
+            ...data
+          };
 
-            const headers = {
-              'Content-Type': 'application/json'
-            };
+          const headers = { 'Content-Type': 'application/json' };
 
-            // Use OPS_API_KEY if available for Bearer authentication
-            if (OPS_API_KEY) {
-              headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
-            }
-
-            await axios.post(WEB_PORTAL_INCOMING_URL, forwardData, { headers });
-            console.log(`🚀 Forwarded to web portal: ${WEB_PORTAL_INCOMING_URL}`);
-          } catch (err) {
-            console.error(`❌ Error forwarding to web portal: ${err.message}`);
+          // Use OPS_API_KEY if available for Bearer authentication
+          if (OPS_API_KEY) {
+            headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
           }
+
+          await axios.post(targetUrl, forwardData, { headers, timeout: 5000 });
+          console.log(`🚀 Forwarded inbound SMS to web portal: ${targetUrl}`);
+        } catch (err) {
+          console.error(`❌ Error forwarding to web portal (${targetUrl}): ${err.message}`);
         }
+
       } catch (err) {
         console.error(`❌ Error parsing message from device ${deviceId}:`, err.message);
       }
