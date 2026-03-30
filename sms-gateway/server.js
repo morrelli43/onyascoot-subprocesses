@@ -5,7 +5,8 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 const PORT = process.env.PORT || 4330;
 const API_KEY = process.env.SMS_GATEWAY_API_KEY;
