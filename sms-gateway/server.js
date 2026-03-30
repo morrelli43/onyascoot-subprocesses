@@ -70,16 +70,17 @@ server.on('upgrade', (request, socket, head) => {
     devices.set(deviceId, ws);
     console.log(`✅ Device connected: ${deviceId}`);
 
-    // Discover phone's HTTP API URL from the peer address or env override
+    // Discover phone's HTTP API URL from headers the Android app sends on connect
+    const headerLocalIp   = request.headers['x-local-ip'];
+    const headerLocalPort = request.headers['x-local-port'] || '4330';
     if (PHONE_API_URL) {
       discoveredPhoneApiUrl = PHONE_API_URL;
+      console.log(`📱 Using configured phone API URL: ${discoveredPhoneApiUrl}`);
+    } else if (headerLocalIp && headerLocalIp !== '0.0.0.0') {
+      discoveredPhoneApiUrl = `http://${headerLocalIp}:${headerLocalPort}`;
+      console.log(`📱 Discovered phone HTTP API from headers: ${discoveredPhoneApiUrl}`);
     } else {
-      // Extract peer IP from socket - this is the phone's LAN IP
-      const peerIp = socket.remoteAddress?.replace('::ffff:', '');
-      if (peerIp && peerIp !== '127.0.0.1') {
-        discoveredPhoneApiUrl = `http://${peerIp}:4330`;
-        console.log(`📱 Discovered phone HTTP API at: ${discoveredPhoneApiUrl}`);
-      }
+      console.warn(`⚠️ Could not determine phone local IP (header was: ${headerLocalIp}). Set PHONE_API_URL env var as fallback.`);
     }
 
     ws.on('pong', () => {
