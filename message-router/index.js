@@ -135,11 +135,11 @@ app.post('/submit', async (req, res) => {
             } else if (issuesArr.length === 1) {
                 titleServices = issuesArr[0];
             }
-            let servicesText = issuesArr
-                .filter(issue => issue.toLowerCase() !== 'other')
-                .map(issue => `- ${issue}`).join('\n');
+            // Remove 'Other...' and add Repair/Notes at the start if present
+            let filteredIssues = issuesArr.filter(issue => issue.toLowerCase() !== 'other');
+            let servicesText = filteredIssues.map(issue => `- ${issue}`).join('\n');
             if (s.issue_extra) {
-                servicesText += (servicesText ? '\n' : '') + `- ${s.issue_extra}`;
+                servicesText = `- Repair/Notes: ${s.issue_extra}` + (servicesText ? '\n' + servicesText : '');
             }
             alertTitle = `${suburb ? suburb + ' - ' : ''}${label} | ${titleServices}`;
             lines.push(`${first_name} ${surname}`);
@@ -156,8 +156,8 @@ app.post('/submit', async (req, res) => {
             const photos = scooterPhotos[0] || [];
             if (photos.length > 0) {
                 lines.push('');
-                const photoLinks = photos.map((p, idx) => `<a href=\"${p.url}\">Unknown-${idx + 1}</a>`).join(', ');
-                lines.push(`Photos: ${photoLinks}`);
+                const photoLinks = photos.map((p, idx) => `<a href="${p.url}">eScooter1-${idx + 1}</a>`).join(', ');
+                lines.push(`Identify: ${photoLinks}`);
             }
         } else {
             alertTitle = `${suburb ? suburb + ' - ' : ''}${scooters.length}x eScooters`;
@@ -175,18 +175,17 @@ app.post('/submit', async (req, res) => {
                 lines.push('');
                 const label = `${s.make || 'Unknown'} ${s.model || ''}`.trim() || 'Unknown eScooter';
                 const issuesArr = s.issues || [];
-                let servicesText = issuesArr
-                    .filter(issue => issue.toLowerCase() !== 'other')
-                    .map(issue => `- ${issue}`).join('\n');
+                let filteredIssues = issuesArr.filter(issue => issue.toLowerCase() !== 'other');
+                let servicesText = filteredIssues.map(issue => `- ${issue}`).join('\n');
                 if (s.issue_extra) {
-                    servicesText += (servicesText ? '\n' : '') + `- ${s.issue_extra}`;
+                    servicesText = `- Repair/Notes: ${s.issue_extra}` + (servicesText ? '\n' + servicesText : '');
                 }
                 lines.push(`${i + 1}. ${label}`);
                 if (servicesText) lines.push(servicesText);
                 const photos = scooterPhotos[i] || [];
                 if (photos.length > 0) {
-                    const photoLinks = photos.map((p, idx) => `<a href=\"${p.url}\">Unknown-${idx + 1}</a>`).join(', ');
-                    lines.push(`Photos: ${photoLinks}`);
+                    const photoLinks = photos.map((p, idx) => `<a href="${p.url}">eScooter${i + 1}-${idx + 1}</a>`).join(', ');
+                    lines.push(`Identify: ${photoLinks}`);
                 }
             });
         }
