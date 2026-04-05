@@ -96,27 +96,16 @@ app.post('/submit', async (req, res) => {
             console.error('⚠️ Ops-Forwarder routing failed:', detail);
         });
 
-    // 2. Build and send Pushbullet alert (async — fetches QR photo URLs first)
+    // 2. Build and send Pushbullet alert
     (async () => {
-        // Fetch QR photo filenames for each scooter that has a session
-        const scooterPhotos = await Promise.all(scooters.map(async s => {
-            if (!s.qr_session_id || s.qr_photos === 0) return [];
-            try {
-                const resp = await axios.get(`${dontknowUrl}/photo-poll/${s.qr_session_id}`, { timeout: 5000 });
-                return (resp.data.photoUrls || []).map((p, i) => {
-                    const baseUrl = (dontknowPublicUrl || '').replace(/\/$/, '');
-                    return {
-                        num: i + 1,
-                        url: (p.url && p.url.startsWith('http'))
-                            ? p.url
-                            : `${baseUrl}/photo-file/${encodeURIComponent(p.filename)}`
-                    };
-                });
-            } catch (e) {
-                console.error(`[Message Router] Could not fetch photos for session ${s.qr_session_id}:`, e.message);
-                return [];
-            }
-        }));
+        // Extract photo URLs from the frontend JSON payload
+        const scooterPhotos = scooters.map(s => {
+            const urls = [...(s.model_photo_urls || []), ...(s.issue_photo_urls || [])];
+            return urls.map((url, i) => ({
+                num: i + 1,
+                url: url
+            }));
+        });
 
         const multiJob = scooters.length > 1;
         let alertTitle = "";
