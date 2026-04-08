@@ -170,7 +170,8 @@ class SyncEngine:
                     print(f"  Loaded {len(google_contacts)} Google contacts.")
                 except Exception as e:
                     print(f"  Error fetching from Google: {e}")
-            
+                    print("  Aborting sync to prevent duplication issues.")
+                    return False
             # 2.5. Orphan Detection: delete Google contacts no longer in Square
             if 'google' in self.connectors and 'square' in self.connectors:
                 self._delete_google_orphans(google_contacts, square_members)

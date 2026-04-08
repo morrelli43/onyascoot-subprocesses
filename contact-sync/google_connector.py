@@ -140,6 +140,8 @@ class GoogleContactsConnector:
             # Handle both newline (old) and comma (new) separators
             if '\n' in street_full:
                 street_parts = street_full.split('\n', 1)
+                street = street_parts[0]
+                street2 = street_parts[1] if len(street_parts) > 1 else ''
             elif ', ' in street_full:
                 # Common AU format: "Unit X, Street Y" - we want to keep them separated
                 street_parts = street_full.split(', ', 1)
