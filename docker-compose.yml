@@ -148,6 +148,23 @@ services:
 
 
 
+  googlemapsapi:
+    build: ./googlemapsapi
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_googlemapsapi:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    environment:
+      - PORT=4315
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - SERVICE_API_KEY=${GOOGLEMAPSAPI_SERVICE_API_KEY}
+      - DEFAULT_ORIGIN=${GOOGLEMAPSAPI_DEFAULT_ORIGIN:-391 Hawthorn Road, Caulfield South VIC 3162, Australia}
+      - QUEUE_CONCURRENCY=${GOOGLEMAPSAPI_QUEUE_CONCURRENCY:-10}
+    ports:
+      - "${GOOGLEMAPSAPI_PORT:-4315}:4315"
+
 networks:
   default:
     name: ${DOCKER_NETWORK_NAME:-oys_frontend_live_net}

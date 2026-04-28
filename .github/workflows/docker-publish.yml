@@ -32,6 +32,7 @@ jobs:
             ops-forwarder: 'ops-forwarder/**'
             dontknowescooter: 'dontknowescooter/**'
             sms-gateway: 'sms-gateway/**'
+            googlemapsapi: 'googlemapsapi/**'
 
   build:
     needs: filter
@@ -61,6 +62,8 @@ jobs:
             image_suffix: "_dontknowescooter"
           - service: sms-gateway
             image_suffix: "_sms_gateway"
+          - service: googlemapsapi
+            image_suffix: "_googlemapsapi"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -229,6 +232,9 @@ jobs:
           SMS_GATEWAY_PORT: ${{ vars.SMS_GATEWAY_PORT }}
           SMS_GATEWAY_API_KEY_VAL: ${{ secrets.SMS_GATEWAY_API_KEY }}
           WEB_PORTAL_INCOMING_URL_VAL: ${{ vars.WEB_PORTAL_INCOMING_URL }}
+          GOOGLEMAPSAPI_PORT: ${{ vars.GOOGLEMAPSAPI_PORT }}
+          GOOGLE_MAPS_API_KEY_VAL: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          GOOGLEMAPSAPI_SERVICE_API_KEY_VAL: ${{ secrets.GOOGLEMAPSAPI_SERVICE_API_KEY }}
 
         run: |
           # Define environment-specific variables
@@ -298,6 +304,9 @@ jobs:
             echo "SMS_GATEWAY_PORT=$SMS_GATEWAY_PORT" >> .env.subprocesses
             echo "SMS_GATEWAY_API_KEY=$SMS_GATEWAY_API_KEY_VAL" >> .env.subprocesses
             echo "WEB_PORTAL_INCOMING_URL=$WEB_PORTAL_INCOMING_URL_VAL" >> .env.subprocesses
+            echo "GOOGLEMAPSAPI_PORT=$GOOGLEMAPSAPI_PORT" >> .env.subprocesses
+            echo "GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY_VAL" >> .env.subprocesses
+            echo "GOOGLEMAPSAPI_SERVICE_API_KEY=$GOOGLEMAPSAPI_SERVICE_API_KEY_VAL" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."
