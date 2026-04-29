@@ -4,6 +4,7 @@ Contact Sync v2.0 - Core Entrypoint
 Synchronizes Google Contacts & Square Customers into a strictly canonical engine.
 """
 
+# Triggering build for renamed image
 import os
 import sys
 import argparse
