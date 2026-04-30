@@ -218,6 +218,10 @@ app.post('/webhooks/square', async (req, res) => {
 
     console.log(`\n[Message Router] Received Square Webhook. Fanning out...`);
 
+    const contactSyncSquareEnabled = String(
+        process.env.CONTACT_SYNC_ENABLE_SQUARE || 'false'
+    ).toLowerCase() === 'true';
+
     const rawData = req.rawBody || req.body;
     
     // Pass along whatever headers came in, especially the 'x-square-hmacsha256-signature'
@@ -232,10 +236,13 @@ app.post('/webhooks/square', async (req, res) => {
     const contactSyncSquareUrl = (process.env.CONTACT_SYNC_URL || 'http://contact-sync:4310/send-it').replace('/send-it', '/webhooks/square');
     const calendarSyncSquareUrl = process.env.CALENDAR_SYNC_URL || 'http://calendar-sync:5001/webhooks/square';
 
-    // Route to Contact Sync
-    axios.post(contactSyncSquareUrl, rawData, { headers })
-        .then(() => console.log('✅ Square Webhook -> Contact-Sync'))
-        .catch(err => console.error('⚠️ Contact-Sync Square Webhook failed:', err.message));
+    if (contactSyncSquareEnabled) {
+        axios.post(contactSyncSquareUrl, rawData, { headers })
+            .then(() => console.log('✅ Square Webhook -> Contact-Sync'))
+            .catch(err => console.error('⚠️ Contact-Sync Square Webhook failed:', err.message));
+    } else {
+        console.log('⏭️ Square Webhook -> Contact-Sync skipped (disabled)');
+    }
 
     // Route to Calendar Sync
     axios.post(calendarSyncSquareUrl, rawData, { headers })
