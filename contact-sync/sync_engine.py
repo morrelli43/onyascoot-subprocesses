@@ -85,18 +85,23 @@ class SyncEngine:
             # Ensure custom ID (cst-XXXXXX) is assigned immediately
             self._ensure_custom_id(contact)
             
-            # Drop the webform directly into the store so it has memory presence
-            # then instantly push to Square.
+            # Drop the webform directly into the store so it has memory presence.
             if not contact.normalized_phone:
                 print("WARNING: Webhook payload missing parseable phone, dropping.")
                 return False
                 
-            # Webforms are authoritative for the data they PROVIDE, but they 
-            # should trigger a Square push.
+            # Webforms are authoritative for the data they provide.
             self.store.add_contact(contact, source_of_truth=source_name, authoritative=True)
             
-            # Instant Push to Square only.
-            # The Square webhook will fire back and trigger a full sync to Google.
+            # Instant push to Google so the contact appears on the phone quickly,
+            # without relying on any Square webhook round-trip.
+            if 'google' in self.connectors and hasattr(self.connectors['google'], 'push_contact'):
+                print("Pushing webhook contact to Google...")
+                if not self.connectors['google'].push_contact(contact):
+                    print("WARNING: Failed to push webhook contact to Google.")
+                    return False
+
+            # If Square contact sync is explicitly enabled, also push there.
             if 'square' in self.connectors and hasattr(self.connectors['square'], 'push_contact'):
                 print(f"Pushing webhook contact to Square...")
                 self.connectors['square'].push_contact(contact)
