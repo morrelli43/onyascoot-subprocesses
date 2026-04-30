@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       - SQUARE_ACCESS_TOKEN=${SQUARE_ACCESS_TOKEN}
-      - ENABLE_SQUARE=${ENABLE_SQUARE:-true}
+      - ENABLE_SQUARE=${ENABLE_SQUARE:-false}
       - GOOGLE_CREDENTIALS_FILE=${GOOGLE_CREDENTIALS_FILE:-/app/env_files/credentials.json}
       - GOOGLE_TOKEN_FILE=${GOOGLE_TOKEN_FILE:-/app/env_files/token.json}
       - CALENDAR_SYNC_API_KEY=${CALENDAR_SYNC_API_KEY:-}
