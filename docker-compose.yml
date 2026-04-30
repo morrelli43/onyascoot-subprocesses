@@ -154,6 +154,7 @@ services:
 
   googlemapsapi:
     build: ./googlemapsapi
+    container_name: googlemapsapi
     image: ghcr.io/morrelli43/onyascoot-subprocesses_googlemapsapi:${IMAGE_TAG:-main}
     restart: unless-stopped
     dns:
