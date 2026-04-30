@@ -1,6 +1,5 @@
 """
 Sync engine for coordinating contact synchronization in V2 architecture.
-Always considers Square as the primary source of truth.
 """
 from typing import List, Dict
 import threading
@@ -106,8 +105,125 @@ class SyncEngine:
         finally:
             self.lock.release()
 
+    def _contact_from_ops_payload(self, payload: dict) -> Contact:
+        """Map an Operations customer payload to canonical Contact."""
+        contact = Contact()
+        contact.custom_id = str(payload.get('customer_uid') or payload.get('customerUid') or '').strip() or None
+
+        contact.first_name = payload.get('first_name') or payload.get('firstName') or ''
+        contact.last_name = payload.get('surname') or payload.get('last_name') or payload.get('lastName') or ''
+        contact.phone = payload.get('number') or payload.get('phone') or payload.get('customer_phone') or ''
+        contact.email = payload.get('email') or payload.get('customer_email') or ''
+        contact.company = payload.get('company') or ''
+        contact.notes = payload.get('issue_extra') or payload.get('issue') or payload.get('notes') or ''
+
+        address_line = payload.get('address_line_1') or payload.get('address') or payload.get('addressLine1') or ''
+        suburb = payload.get('suburb') or payload.get('city') or ''
+        state = payload.get('state') or 'VIC'
+        postcode = payload.get('postcode') or payload.get('postal_code') or payload.get('postalCode') or ''
+        country = payload.get('country') or 'AU'
+        if address_line or suburb or postcode:
+            contact.addresses = [{
+                'street': address_line,
+                'city': suburb,
+                'state': state,
+                'postal_code': postcode,
+                'country': country,
+            }]
+
+        make = payload.get('escooter_make') or payload.get('scooter_make') or payload.get('scooterMake') or ''
+        model = payload.get('escooter_model') or payload.get('scooter_model') or payload.get('scooterModel') or ''
+        escooter = payload.get('escooter') or payload.get('escooter1') or payload.get('scooter') or ''
+        if not escooter:
+            escooter = f"{make} {model}".strip()
+        if escooter:
+            contact.extra_fields['escooter1'] = escooter
+
+        return contact
+
+    def upsert_contact_from_operations(self, payload: dict) -> dict:
+        """Upsert a contact in Google from Operations payload using customer_uid as stable key."""
+        if 'google' not in self.connectors:
+            raise RuntimeError('Google connector not configured')
+
+        customer_uid = str(payload.get('customer_uid') or payload.get('customerUid') or '').strip()
+        if not customer_uid:
+            raise ValueError('Missing customer_uid (or customerUid)')
+
+        with self.lock:
+            contact = self._contact_from_ops_payload(payload)
+
+            # Try deterministic lookup by customer_uid first.
+            existing_google = None
+            google_contacts = self.connectors['google'].fetch_contacts()
+            for gc in google_contacts:
+                if getattr(gc, 'custom_id', None) == customer_uid:
+                    existing_google = gc
+                    break
+
+            # Fallback for older records that may predate customer_uid tagging.
+            if not existing_google:
+                incoming_phone = contact.normalized_phone
+                incoming_email = (contact.email or '').lower().strip()
+                for gc in google_contacts:
+                    if incoming_phone and gc.normalized_phone == incoming_phone:
+                        existing_google = gc
+                        break
+                    if incoming_email and gc.email and gc.email.lower().strip() == incoming_email:
+                        existing_google = gc
+                        break
+
+            if existing_google and existing_google.source_ids.get('google'):
+                contact.source_ids['google'] = existing_google.source_ids.get('google')
+
+            ok = self.connectors['google'].push_contact(contact)
+            if not ok:
+                raise RuntimeError('Google push_contact returned false')
+
+            return {
+                'status': 'ok',
+                'action': 'upsert',
+                'customer_uid': customer_uid,
+                'google_resource': contact.source_ids.get('google')
+            }
+
+    def delete_contact_from_operations(self, payload: dict) -> dict:
+        """Delete a Google contact by Operations customer_uid."""
+        if 'google' not in self.connectors:
+            raise RuntimeError('Google connector not configured')
+
+        customer_uid = str(payload.get('customer_uid') or payload.get('customerUid') or '').strip()
+        if not customer_uid:
+            raise ValueError('Missing customer_uid (or customerUid)')
+
+        with self.lock:
+            google_contacts = self.connectors['google'].fetch_contacts()
+            target = None
+            for gc in google_contacts:
+                if getattr(gc, 'custom_id', None) == customer_uid:
+                    target = gc
+                    break
+
+            if not target or not target.source_ids.get('google'):
+                return {
+                    'status': 'not_found',
+                    'action': 'delete',
+                    'customer_uid': customer_uid
+                }
+
+            ok = self.connectors['google'].delete_contact(target.source_ids['google'])
+            if not ok:
+                raise RuntimeError('Google delete_contact returned false')
+
+            return {
+                'status': 'deleted',
+                'action': 'delete',
+                'customer_uid': customer_uid,
+                'google_resource': target.source_ids['google']
+            }
+
     def sync_all(self) -> bool:
-        """Perform a full synchronization cycle explicitly weighting Square."""
+        """Perform a full synchronization cycle explicitly weighting Square when enabled."""
         if not self.lock.acquire(blocking=False):
             print("Sync already in progress, skipping this trigger.")
             return False

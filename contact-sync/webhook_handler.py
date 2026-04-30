@@ -22,6 +22,8 @@ class WebhookServer:
         self.app.route('/sync', methods=['GET', 'POST'])(self.trigger_sync)
         self.app.route('/send-it', methods=['POST', 'OPTIONS'])(self.handle_webform)
         self.app.route('/webhooks/square', methods=['POST'])(self.handle_square)
+        self.app.route('/ops-contact-sync', methods=['POST'])(self.handle_ops_contact_sync)
+        self.app.route('/webhooks/operations/contact', methods=['POST'])(self.handle_ops_contact_sync)
         self.app.route('/cleanup-duplicates', methods=['GET', 'POST'])(self.trigger_cleanup)
 
     def health_check(self):
@@ -120,6 +122,36 @@ class WebhookServer:
             import traceback
             traceback.print_exc()
             return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    def _check_ops_api_key(self) -> bool:
+        """Validate optional API key for operations contact exchange."""
+        expected = os.getenv('CONTACT_SYNC_API_KEY', '').strip()
+        if not expected:
+            return True
+        received = request.headers.get('X-API-Key', '').strip()
+        return received == expected
+
+    def handle_ops_contact_sync(self):
+        """Operations portal -> contact sync exchange endpoint."""
+        if not self._check_ops_api_key():
+            return jsonify({'error': 'unauthorized'}), 401
+
+        payload = request.get_json(silent=True) or {}
+        action = str(payload.get('action', 'upsert')).lower().strip()
+
+        try:
+            if action == 'delete':
+                result = self.engine.delete_contact_from_operations(payload)
+                status = 404 if result.get('status') == 'not_found' else 200
+                return jsonify(result), status
+
+            result = self.engine.upsert_contact_from_operations(payload)
+            return jsonify(result), 200
+        except ValueError as e:
+            return jsonify({'error': 'bad_request', 'message': str(e)}), 400
+        except Exception as e:
+            print(f"[OPS-CONTACT] Error: {e}")
+            return jsonify({'error': 'sync_failed', 'message': str(e)}), 500
 
     def _run_in_background(self, func, *args):
         """Helper to run task in daemon thread without blocking the response."""

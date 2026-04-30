@@ -8,10 +8,11 @@ services:
       - ${DOCKER_FOLDER_WEBFILES:-.}/oys_contacts/env_files:/app/env_files
     environment:
       - ENABLE_GOOGLE=${ENABLE_GOOGLE:-true}
-      - ENABLE_SQUARE=${ENABLE_SQUARE:-true}
+      - ENABLE_SQUARE=${ENABLE_SQUARE:-false}
       - SQUARE_ACCESS_TOKEN=${SQUARE_ACCESS_TOKEN}
       - SQUARE_WEBHOOK_URL=${SQUARE_WEBHOOK_URL}
       - SQUARE_SIGNATURE_KEY=${SQUARE_SIGNATURE_KEY}
+      - CONTACT_SYNC_API_KEY=${CONTACT_SYNC_API_KEY:-}
       - WEBFORM_STORAGE=${WEBFORM_STORAGE:-/app/env_files/webform_contacts.json}
       - GOOGLE_CREDENTIALS_FILE=${GOOGLE_CREDENTIALS_FILE:-/app/env_files/credentials.json}
       - GOOGLE_TOKEN_FILE=${GOOGLE_TOKEN_FILE:-/app/env_files/token.json}
