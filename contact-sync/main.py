@@ -31,6 +31,11 @@ def load_config():
 def setup_connectors(engine):
     """Setup and configure sync connectors based on env vars."""
     print("Setting up connectors...")
+
+    contact_sync_enable_square = os.getenv(
+        'CONTACT_SYNC_ENABLE_SQUARE',
+        os.getenv('ENABLE_SQUARE', 'false')
+    ).lower() == 'true'
     
     # 1. Google Contacts
     if os.getenv('ENABLE_GOOGLE', 'true').lower() == 'true':
@@ -48,7 +53,7 @@ def setup_connectors(engine):
             print(f"  ✗ Warning: Could not setup Google connector: {e}")
 
     # 2. Square
-    if SQUARE_AVAILABLE and os.getenv('ENABLE_SQUARE', 'true').lower() == 'true':
+    if SQUARE_AVAILABLE and contact_sync_enable_square:
         try:
             access_token = os.getenv('SQUARE_ACCESS_TOKEN')
             square_conn = SquareConnector(access_token=access_token)
@@ -56,6 +61,8 @@ def setup_connectors(engine):
             print("  ✓ Square connector registered")
         except Exception as e:
             print(f"  ✗ Warning: Could not setup Square connector: {e}")
+    else:
+        print("  - Square connector disabled for contact-sync")
 
 def run_sync_loop(engine, interval_secs):
     """Background thread to perform periodic full-sync loops."""

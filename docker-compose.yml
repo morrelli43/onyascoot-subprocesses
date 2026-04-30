@@ -8,6 +8,7 @@ services:
       - ${DOCKER_FOLDER_WEBFILES:-.}/oys_contacts/env_files:/app/env_files
     environment:
       - ENABLE_GOOGLE=${ENABLE_GOOGLE:-true}
+      - CONTACT_SYNC_ENABLE_SQUARE=${CONTACT_SYNC_ENABLE_SQUARE:-false}
       - ENABLE_SQUARE=${ENABLE_SQUARE:-false}
       - SQUARE_ACCESS_TOKEN=${SQUARE_ACCESS_TOKEN}
       - SQUARE_WEBHOOK_URL=${SQUARE_WEBHOOK_URL}

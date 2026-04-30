@@ -112,8 +112,8 @@ class Contact:
         """
         Merge this contact with another.
         """
-        # [DEBUG_FINGERPRINT_V3]
-        print(f"  [DEBUG] Merging {self.first_name} with {other.first_name}")
+        if os.getenv('CONTACT_SYNC_DEBUG_MERGES', 'false').lower() == 'true':
+            print(f"  [DEBUG] Merging {self.first_name} with {other.first_name}")
         
         # 2. Determine supremacy based on source existence and timestamps
         other_is_truth = False

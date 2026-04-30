@@ -29,6 +29,13 @@ class WebhookServer:
     def health_check(self):
         return jsonify({"status": "ok", "version": "v2.4.0"}), 200
 
+    def _is_square_enabled(self) -> bool:
+        """Whether Square integration is enabled for contact-sync."""
+        return os.getenv(
+            'CONTACT_SYNC_ENABLE_SQUARE',
+            os.getenv('ENABLE_SQUARE', 'false')
+        ).lower() == 'true'
+
     def trigger_sync(self):
         """Manually trigger a full sync pass in the background."""
         import threading
@@ -77,6 +84,10 @@ class WebhookServer:
     def handle_square(self):
         """Process real-time Square customer events."""
         print("\n[WebhookServer] Received Square Event")
+
+        if not self._is_square_enabled():
+            print("  --> Square integration disabled for contact-sync; ignoring webhook.")
+            return jsonify({'status': 'ignored', 'reason': 'square_disabled'}), 200
         
         try:
             signature = request.headers.get('x-square-hmacsha256-signature')
