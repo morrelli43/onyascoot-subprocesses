@@ -4,7 +4,7 @@ Google Calendar API connector.
 from typing import List, Optional, Dict
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 try:
     from google.oauth2.credentials import Credentials
@@ -101,7 +101,12 @@ class GoogleCalendarConnector:
                 
         return events
         
-    def upsert_booking_as_event(self, booking: Booking, calendar_id: str = 'primary') -> str:
+    def upsert_booking_as_event(
+        self,
+        booking: Booking,
+        calendar_id: str = 'primary',
+        id_property_name: str = 'square_booking_id'
+    ) -> str:
         """Create or update a calendar event from a booking."""
         if not self.service:
             self.authenticate()
@@ -148,7 +153,7 @@ class GoogleCalendarConnector:
             },
             'extendedProperties': {
                 'private': {
-                    'square_booking_id': booking.booking_id
+                    id_property_name: booking.booking_id
                 }
             }
         }
@@ -174,3 +179,23 @@ class GoogleCalendarConnector:
         if not self.service:
             self.authenticate()
         self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+
+    def find_event_id_by_private_property(
+        self,
+        property_name: str,
+        property_value: str,
+        calendar_id: str = 'primary'
+    ) -> Optional[str]:
+        """Find the first event matching a private extended property."""
+        if not self.service:
+            self.authenticate()
+
+        time_min = datetime.now(timezone.utc) - timedelta(days=365)
+        events = self.fetch_events(calendar_id=calendar_id, time_min=time_min)
+
+        for event in events:
+            private_props = event.get('extendedProperties', {}).get('private', {})
+            if private_props.get(property_name) == property_value:
+                return event.get('id')
+
+        return None

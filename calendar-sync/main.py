@@ -4,7 +4,8 @@ Core sync engine for Square to Google Calendar.
 import os
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict
+from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 
 from booking_model import Booking
 from square_booking_connector import SquareBookingConnector
@@ -23,6 +24,8 @@ class WebhookServer:
         # Register routes
         self.app.route('/square-webhook', methods=['POST'])(self.square_webhook)
         self.app.route('/webhooks/square', methods=['POST'])(self.square_webhook)
+        self.app.route('/ops-calendar-sync', methods=['POST'])(self.ops_calendar_sync)
+        self.app.route('/webhooks/operations/calendar', methods=['POST'])(self.ops_calendar_sync)
         self.app.route('/<path:path>', methods=['POST', 'GET'])(self.catch_all)
 
     def square_webhook(self):
@@ -39,6 +42,160 @@ class WebhookServer:
             threading.Thread(target=delayed_sync).start()
         return jsonify({'status': 'ok'})
 
+    def _check_ops_api_key(self) -> bool:
+        """Validate optional API key for operations calendar exchange."""
+        expected = os.getenv('CALENDAR_SYNC_API_KEY', '').strip()
+        if not expected:
+            return True
+        received = request.headers.get('X-API-Key', '').strip()
+        return received == expected
+
+    def _parse_ops_start_datetime(self, payload: dict) -> datetime:
+        """Parse schedule fields from Operations payload using Melbourne timezone."""
+        mel_tz = ZoneInfo("Australia/Melbourne")
+
+        scheduled_at = payload.get('scheduled_at') or payload.get('scheduledAt')
+        if scheduled_at:
+            dt = datetime.fromisoformat(str(scheduled_at).replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=mel_tz)
+            return dt.astimezone(mel_tz)
+
+        scheduled_date = payload.get('scheduled_date') or payload.get('scheduledDate')
+        scheduled_time = str(payload.get('scheduled_time') or payload.get('scheduledTime') or '09:00').strip()
+        if not scheduled_date:
+            raise ValueError("Missing scheduled_date (or scheduledDate) in payload")
+
+        # Accept HH:MM or h:mm AM/PM
+        try:
+            if 'AM' in scheduled_time.upper() or 'PM' in scheduled_time.upper():
+                parsed_time = datetime.strptime(scheduled_time.upper(), '%I:%M %p').strftime('%H:%M')
+            else:
+                parsed_time = datetime.strptime(scheduled_time, '%H:%M').strftime('%H:%M')
+        except ValueError:
+            parsed_time = '09:00'
+
+        return datetime.fromisoformat(f"{scheduled_date}T{parsed_time}:00").replace(tzinfo=mel_tz)
+
+    def _build_booking_from_ops_payload(self, payload: dict) -> Booking:
+        """Map Operations job payload into canonical Booking model."""
+        job_uid = payload.get('job_uid') or payload.get('jobUid') or payload.get('id')
+        if not job_uid:
+            raise ValueError("Missing job_uid (or jobUid/id) in payload")
+
+        booking = Booking(str(job_uid))
+        booking.status = payload.get('status')
+
+        # Customer / contact
+        booking.customer_name = payload.get('customer_name') or payload.get('customerName') or 'Customer'
+        booking.customer_phone = payload.get('customer_phone') or payload.get('customerPhone') or payload.get('customer_number')
+        booking.customer_email = payload.get('customer_email') or payload.get('customerEmail')
+        booking.customer_suburb = payload.get('customer_suburb') or payload.get('customerSuburb') or payload.get('suburb')
+
+        # Address + location
+        booking.customer_address = payload.get('customer_address') or payload.get('customerAddress') or payload.get('address')
+        booking.location = booking.customer_address or payload.get('location') or 'OnyaScoot'
+
+        # Notes
+        booking.notes = payload.get('notes') or payload.get('itinerary_note') or payload.get('itineraryNote') or ''
+
+        # Services list can be string[] or object[]
+        raw_services = payload.get('services') or payload.get('services_list') or payload.get('servicesList') or []
+        booking.services_list = []
+        computed_total = 0.0
+        if isinstance(raw_services, list):
+            for svc in raw_services:
+                if isinstance(svc, str):
+                    booking.services_list.append(svc)
+                elif isinstance(svc, dict):
+                    name = svc.get('description') or svc.get('name') or svc.get('service_name')
+                    if name:
+                        booking.services_list.append(str(name))
+                    amount = svc.get('amount') or svc.get('price') or 0
+                    try:
+                        computed_total += float(amount)
+                    except (TypeError, ValueError):
+                        pass
+
+        # Summary fields
+        service_name = payload.get('service_name') or payload.get('serviceName')
+        if service_name:
+            booking.service_name = str(service_name)
+        elif booking.services_list:
+            booking.service_name = booking.services_list[0]
+            if len(booking.services_list) > 1:
+                booking.service_name += f" (+{len(booking.services_list)-1} more)"
+
+        escooter = payload.get('escooter') or payload.get('eScooter')
+        if not escooter:
+            make = payload.get('scooter_make') or payload.get('scooterMake') or ''
+            model = payload.get('scooter_model') or payload.get('scooterModel') or ''
+            escooter = f"{make} {model}".strip()
+        booking.escooter = escooter or "Unknown eScooter"
+
+        total_price = payload.get('total_price')
+        if total_price is None:
+            total_price = payload.get('totalPrice')
+        if total_price is None:
+            total_price = payload.get('final_price')
+        if total_price is None:
+            total_price = computed_total
+        try:
+            booking.total_price = float(total_price or 0)
+        except (TypeError, ValueError):
+            booking.total_price = computed_total
+
+        start_dt = self._parse_ops_start_datetime(payload)
+        duration_minutes = payload.get('duration_minutes') or payload.get('durationMinutes') or 60
+        try:
+            duration_minutes = max(int(duration_minutes), 1)
+        except (TypeError, ValueError):
+            duration_minutes = 60
+
+        booking.start_at = start_dt
+        booking.end_at = start_dt + timedelta(minutes=duration_minutes)
+
+        google_event_id = payload.get('google_event_id') or payload.get('googleEventId')
+        if google_event_id:
+            booking.google_event_id = str(google_event_id)
+
+        return booking
+
+    def ops_calendar_sync(self):
+        """Operations portal -> calendar sync exchange endpoint."""
+        if not self._check_ops_api_key():
+            return jsonify({'error': 'unauthorized'}), 401
+
+        payload = request.json or {}
+        action = str(payload.get('action', 'upsert')).lower()
+        job_uid = payload.get('job_uid') or payload.get('jobUid') or payload.get('id')
+
+        if not job_uid:
+            return jsonify({'error': 'bad_request', 'message': 'Missing job_uid (or jobUid/id)'}), 400
+
+        try:
+            if action == 'delete':
+                event_id = payload.get('google_event_id') or payload.get('googleEventId')
+                if not event_id:
+                    event_id = self.engine.google.find_event_id_by_private_property('ops_job_uid', str(job_uid))
+
+                if not event_id:
+                    return jsonify({'status': 'not_found', 'job_uid': job_uid}), 404
+
+                self.engine.google.delete_event(str(event_id))
+                return jsonify({'status': 'deleted', 'job_uid': job_uid, 'google_event_id': event_id})
+
+            booking = self._build_booking_from_ops_payload(payload)
+            if not booking.google_event_id:
+                booking.google_event_id = self.engine.google.find_event_id_by_private_property('ops_job_uid', booking.booking_id)
+
+            event_id = self.engine.google.upsert_booking_as_event(booking, id_property_name='ops_job_uid')
+            return jsonify({'status': 'ok', 'action': 'upsert', 'job_uid': job_uid, 'google_event_id': event_id})
+
+        except Exception as e:
+            print(f"[OPS-CALENDAR] Error: {e}")
+            return jsonify({'error': 'sync_failed', 'message': str(e)}), 500
+
     def catch_all(self, path):
         print(f"[WEBHOOK-DEBUG] Received request on unknown path: /{path}")
         if request.is_json:
@@ -53,8 +210,12 @@ class SyncEngine:
     """Orchestrates the sync between Square and Google Calendar."""
     
     def __init__(self, square_token: str = None, google_creds: str = 'credentials.json', google_token: str = 'token.json'):
-        self.square = SquareBookingConnector(square_token)
+        self.square = None
         self.google = GoogleCalendarConnector(google_creds, google_token)
+
+        enable_square = os.getenv('ENABLE_SQUARE', 'true').lower() in ('1', 'true', 'yes')
+        if enable_square:
+            self.square = SquareBookingConnector(square_token)
         
         # Cache for performance
         self.customer_cache = {}
@@ -62,6 +223,10 @@ class SyncEngine:
         
     def sync_upcoming(self):
         """Perform a full sync of upcoming bookings."""
+        if not self.square:
+            print("[SYNC] Square connector disabled. Skipping Square->Google sync loop.")
+            return
+
         print(f"[{datetime.now()}] Starting Square to Google Calendar sync...")
         
         try:
