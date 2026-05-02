@@ -63,15 +63,45 @@ async function pollContainers() {
             let name = c.Names[0];
             if (name.startsWith('/')) name = name.substring(1);
             
-            // Remove project prefix if using standard compose naming (e.g. onyascoot-subprocesses-contact-sync-1)
             const serviceLabel = c.Labels['com.docker.compose.service'];
             const displayObj = {
                 id: c.Id,
                 name: name,
                 service: serviceLabel || name,
-                state: c.State, // 'running', 'exited', 'dead', 'restarting', etc.
-                status: c.Status // 'Up 2 hours', 'Exited (1) 2 minutes ago', etc.
+                state: c.State,
+                status: c.Status,
+                health: null
             };
+
+            // Attempt to ping health endpoint if running
+            if (c.State === 'running' && c.Ports && c.Ports.length > 0) {
+                const port = c.Ports.find(p => p.PrivatePort)?.PrivatePort || c.Ports[0].PrivatePort;
+                if (port) {
+                    try {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 3000);
+                        const res = await fetch(`http://${displayObj.service}:${port}/health`, { 
+                            signal: controller.signal,
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        clearTimeout(timeout);
+                        
+                        let healthData = {};
+                        try {
+                           healthData = await res.json();
+                        } catch(e) {}
+
+                        displayObj.health = {
+                            ok: res.ok,
+                            statusCode: res.status,
+                            data: healthData
+                        };
+                    } catch (e) {
+                        // Just ignore if no health endpoint exists or connection refused
+                        displayObj.health = { ok: false, error: e.message };
+                    }
+                }
+            }
 
             currentNames.add(displayObj.service);
 
@@ -81,18 +111,19 @@ async function pollContainers() {
                     ...displayObj,
                     lastChanged: new Date().toISOString()
                 };
-                // Don't notify on first discovery
-            } else if (existing.state !== displayObj.state) {
+            } else if (existing.state !== displayObj.state || JSON.stringify(existing.health) !== JSON.stringify(displayObj.health)) {
                 const oldState = existing.state;
                 statuses[displayObj.service] = {
                     ...displayObj,
                     lastChanged: new Date().toISOString()
                 };
-                await notifyOperations(displayObj.service, oldState, displayObj.state);
+                // Only notify if the actual container state changed (not just a health ping flap) to avoid spam
+                if (existing.state !== displayObj.state) {
+                    await notifyOperations(displayObj.service, oldState, displayObj.state);
+                }
             } else {
-                // Update dynamic status (e.g. "Up 2 hours" -> "Up 3 hours") without triggering webhook
                 statuses[displayObj.service].status = displayObj.status;
-                statuses[displayObj.service].id = displayObj.id; // in case it was recreated
+                statuses[displayObj.service].id = displayObj.id;
             }
         }
 

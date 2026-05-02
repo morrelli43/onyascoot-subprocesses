@@ -27,7 +27,33 @@ class WebhookServer:
         self.app.route('/cleanup-duplicates', methods=['GET', 'POST'])(self.trigger_cleanup)
 
     def health_check(self):
-        return jsonify({"status": "ok", "version": "v2.4.0"}), 200
+        status = {'status': 'ok', 'version': 'v2.4.0', 'services': {}}
+        status_code = 200
+
+        if 'google' in self.engine.connectors:
+            try:
+                # Test connection
+                self.engine.connectors['google'].service.people().get(
+                    resourceName='people/me',
+                    personFields='names'
+                ).execute()
+                status['services']['google_contacts'] = 'ok'
+            except Exception as e:
+                status['services']['google_contacts'] = f"error: {str(e)}"
+                status_code = 503
+
+        if 'square' in self.engine.connectors:
+            try:
+                self.engine.connectors['square'].client.locations.list_locations()
+                status['services']['square'] = 'ok'
+            except Exception as e:
+                status['services']['square'] = f"error: {str(e)}"
+                status_code = 503
+
+        if status_code != 200:
+            status['status'] = 'error'
+
+        return jsonify(status), status_code
 
     def _is_square_enabled(self) -> bool:
         """Whether Square integration is enabled for contact-sync."""

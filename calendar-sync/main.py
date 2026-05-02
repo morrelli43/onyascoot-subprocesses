@@ -26,7 +26,39 @@ class WebhookServer:
         self.app.route('/webhooks/square', methods=['POST'])(self.square_webhook)
         self.app.route('/ops-calendar-sync', methods=['POST'])(self.ops_calendar_sync)
         self.app.route('/webhooks/operations/calendar', methods=['POST'])(self.ops_calendar_sync)
+        self.app.route('/health', methods=['GET'])(self.health_check)
         self.app.route('/<path:path>', methods=['POST', 'GET'])(self.catch_all)
+
+    def health_check(self):
+        """Check external connections (Google Calendar, Square)."""
+        status = {'status': 'ok', 'services': {}}
+        status_code = 200
+
+        # Check Google
+        try:
+            if not self.engine.google.service:
+                self.engine.google.authenticate()
+            # Simple quick check: get calendar list
+            self.engine.google.service.calendars().get(calendarId='primary').execute()
+            status['services']['google_calendar'] = 'ok'
+        except Exception as e:
+            status['services']['google_calendar'] = f"error: {str(e)}"
+            status_code = 503
+
+        # Check Square if enabled
+        if self.engine.square:
+            try:
+                # Quick test fetch to ensure auth is valid
+                self.engine.square.client.locations.list_locations()
+                status['services']['square'] = 'ok'
+            except Exception as e:
+                status['services']['square'] = f"error: {str(e)}"
+                status_code = 503
+
+        if status_code != 200:
+            status['status'] = 'error'
+
+        return jsonify(status), status_code
 
     def square_webhook(self):
         event = request.json

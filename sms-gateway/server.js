@@ -454,10 +454,14 @@ app.post('/api/sync-all', async (req, res) => {
  * Health Check
  */
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  const isConnected = devices.size > 0;
+  res.status(isConnected ? 200 : 503).json({ 
+    status: isConnected ? 'ok' : 'error', 
     connections: devices.size,
-    activeDevices: Array.from(devices.keys())
+    activeDevices: Array.from(devices.keys()),
+    services: {
+      phone_connection: isConnected ? 'ok' : 'error: no devices connected'
+    }
   });
 });
 
