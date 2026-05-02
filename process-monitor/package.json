@@ -1,0 +1,15 @@
+{
+  "name": "process-monitor",
+  "version": "1.0.0",
+  "description": "Monitors subprocesses and reports status to operations",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.0",
+    "express": "^4.19.0",
+    "node-fetch": "^2.7.0",
+    "cors": "^2.8.5"
+  }
+}

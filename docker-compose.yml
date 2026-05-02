@@ -173,6 +173,20 @@ services:
     ports:
       - "${GOOGLEMAPSAPI_PORT:-4315}:4315"
 
+  process-monitor:
+    build: ./process-monitor
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_process_monitor:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      - PORT=4316
+      - OPS_WEBHOOK_URL=${OPS_WEBHOOK_URL:-http://host.docker.internal:3000/api/webhooks/monitor}
+      - OPS_API_KEY=${OPS_API_KEY}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-onyascoot-subprocesses}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${PROCESS_MONITOR_PORT:-4316}:4316"
+
 networks:
   default:
     name: ${DOCKER_NETWORK_NAME:-oys_frontend_live_net}
