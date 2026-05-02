@@ -159,12 +159,20 @@ class GoogleCalendarConnector:
         }
         
         if booking.google_event_id:
-            # Update existing
-            result = self.service.events().update(
-                calendarId=calendar_id,
-                eventId=booking.google_event_id,
-                body=event_body
-            ).execute()
+            try:
+                # Update existing
+                result = self.service.events().update(
+                    calendarId=calendar_id,
+                    eventId=booking.google_event_id,
+                    body=event_body
+                ).execute()
+            except Exception as e:
+                print(f"  ⚠️ Error updating event {booking.google_event_id} (may have been manually deleted): {e}. Falling back to insert.")
+                # Fallback to insert
+                result = self.service.events().insert(
+                    calendarId=calendar_id,
+                    body=event_body
+                ).execute()
         else:
             # Create new
             result = self.service.events().insert(
