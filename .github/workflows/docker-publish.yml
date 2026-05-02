@@ -33,6 +33,7 @@ jobs:
             dontknowescooter: 'dontknowescooter/**'
             sms-gateway: 'sms-gateway/**'
             googlemapsapi: 'googlemapsapi/**'
+            process-monitor: 'process-monitor/**'
 
   build:
     needs: filter
@@ -64,6 +65,8 @@ jobs:
             image_suffix: "_sms_gateway"
           - service: googlemapsapi
             image_suffix: "_googlemapsapi"
+          - service: process-monitor
+            image_suffix: "_process_monitor"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
