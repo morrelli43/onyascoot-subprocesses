@@ -62,7 +62,7 @@ app.post('/ai-escooter-details-searcher', async (req, res) => {
 
         if (response.status >= 200 && response.status < 300) {
             console.log("✅ AI details fetch forwarded successfully.");
-            return res.status(200).json({ success: true, message: 'AI details fetch forwarded' });
+            return res.status(200).json(response.data);
         } else {
             console.error("⚠️ External webhook returned:", response.status);
             return res.status(response.status).json({ success: false, message: 'External webhook error' });
