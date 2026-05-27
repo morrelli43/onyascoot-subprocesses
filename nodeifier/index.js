@@ -42,7 +42,35 @@ app.post('/send-it', async (req, res) => {
         console.error("❌ Error forwarding alert:", error.message);
         return res.status(500).json({ success: false, message: 'Failed to forward alert', error: error.message });
     }
+/**
+ * Endpoint specifically for routing eScooter make + model details to n8n
+ */
+app.post('/ai-escooter-details-searcher', async (req, res) => {
+    const payload = req.body;
+
+    console.log(`\n[Nodeifier] Received AI details fetch searcher request: ${payload.title || 'No Title'}`);
+
+    // Direct target webhook URL for AI eScooter searcher
+    const pushWebhookUrl = 'https://n8n.morrelli43iot.lan/webhook/ai-escooter-details-searcher';
+
+    try {
+        const response = await axios.post(pushWebhookUrl, payload, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.status >= 200 && response.status < 300) {
+            console.log("✅ AI details fetch forwarded successfully.");
+            return res.status(200).json({ success: true, message: 'AI details fetch forwarded' });
+        } else {
+            console.error("⚠️ External webhook returned:", response.status);
+            return res.status(response.status).json({ success: false, message: 'External webhook error' });
+        }
+    } catch (error) {
+        console.error("❌ Error forwarding AI details fetch:", error.message);
+        return res.status(500).json({ success: false, message: 'Failed to forward AI details fetch', error: error.message });
+    }
 });
+
 
 const PORT = process.env.PORT || 4312;
 app.listen(PORT, () => {
