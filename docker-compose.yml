@@ -179,7 +179,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=4316
-      - OPS_WEBHOOK_URL=${OPS_WEBHOOK_URL:-http://host.docker.internal:3000/api/webhooks/monitor}
+      - OPS_WEBHOOK_URL=${PROCESS_MONITOR_WEBHOOK_URL:-}
       - OPS_API_KEY=${OPS_API_KEY}
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-onyascoot-subprocesses}
     volumes:
