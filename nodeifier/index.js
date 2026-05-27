@@ -53,18 +53,11 @@ app.post('/ai-escooter-details-searcher', async (req, res) => {
     console.log(`\n[Nodeifier] Received AI details fetch searcher request: ${payload.title || 'No Title'}`);
 
     // Direct target webhook URL for AI eScooter searcher
-    const pushWebhookUrl = 'https://n8n.morrelli43iot.lan/webhook/ai-escooter-details-searcher';
-
-    // Avoid SSL validation issues with self-signed certificate on local .lan domain
-    const https = require('https');
-    const agent = new https.Agent({
-        rejectUnauthorized: false
-    });
+    const pushWebhookUrl = 'https://hooks.morrelli43media.com/webhook/ai-escooter-details-searcher';
 
     try {
         const response = await axios.post(pushWebhookUrl, payload, {
-            headers: { 'Content-Type': 'application/json' },
-            httpsAgent: agent
+            headers: { 'Content-Type': 'application/json' }
         });
 
         if (response.status >= 200 && response.status < 300) {
