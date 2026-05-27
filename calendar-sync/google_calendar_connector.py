@@ -179,8 +179,27 @@ class GoogleCalendarConnector:
                 calendarId=calendar_id,
                 body=event_body
             ).execute()
-            
-        return result.get('id')
+
+        new_event_id = result.get('id')
+
+        # Remove any stale duplicate events that share the same booking ID but are
+        # not the event we just created/updated (can happen if the time was changed
+        # and the old event was left behind due to a failed lookup).
+        try:
+            all_ids = self.find_all_event_ids_by_private_property(
+                id_property_name, booking.booking_id, calendar_id
+            )
+            for stale_id in all_ids:
+                if stale_id != new_event_id:
+                    print(f"  🧹 Removing stale duplicate event {stale_id} for {id_property_name}={booking.booking_id}")
+                    try:
+                        self.delete_event(stale_id, calendar_id)
+                    except Exception as del_e:
+                        print(f"  ⚠️ Could not remove stale event {stale_id}: {del_e}")
+        except Exception as cleanup_e:
+            print(f"  ⚠️ Duplicate cleanup check failed (non-fatal): {cleanup_e}")
+
+        return new_event_id
 
     def delete_event(self, event_id: str, calendar_id: str = 'primary'):
         """Delete an event from Google Calendar."""
@@ -188,22 +207,53 @@ class GoogleCalendarConnector:
             self.authenticate()
         self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
 
+    def find_all_event_ids_by_private_property(
+        self,
+        property_name: str,
+        property_value: str,
+        calendar_id: str = 'primary'
+    ) -> List[str]:
+        """Return all event IDs whose private extended property matches the given key=value.
+
+        Uses the Google Calendar API's server-side ``privateExtendedProperty`` filter
+        rather than fetching every event and filtering in Python, which is both faster
+        and more reliable.
+        """
+        if not self.service:
+            self.authenticate()
+
+        # Search 90 days back so we catch any recently-created quote/booking events
+        # that may have a start time in the past, as well as all future events.
+        time_min = datetime.now(timezone.utc) - timedelta(days=90)
+        event_ids: List[str] = []
+        page_token = None
+
+        while True:
+            result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=time_min.isoformat(),
+                privateExtendedProperty=f'{property_name}={property_value}',
+                singleEvents=True,
+                pageToken=page_token,
+            ).execute()
+
+            for event in result.get('items', []):
+                eid = event.get('id')
+                if eid:
+                    event_ids.append(eid)
+
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                break
+
+        return event_ids
+
     def find_event_id_by_private_property(
         self,
         property_name: str,
         property_value: str,
         calendar_id: str = 'primary'
     ) -> Optional[str]:
-        """Find the first event matching a private extended property."""
-        if not self.service:
-            self.authenticate()
-
-        time_min = datetime.now(timezone.utc) - timedelta(days=365)
-        events = self.fetch_events(calendar_id=calendar_id, time_min=time_min)
-
-        for event in events:
-            private_props = event.get('extendedProperties', {}).get('private', {})
-            if private_props.get(property_name) == property_value:
-                return event.get('id')
-
-        return None
+        """Find the first event ID whose private extended property matches the given key=value."""
+        ids = self.find_all_event_ids_by_private_property(property_name, property_value, calendar_id)
+        return ids[0] if ids else None

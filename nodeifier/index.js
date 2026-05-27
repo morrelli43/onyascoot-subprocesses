@@ -42,6 +42,8 @@ app.post('/send-it', async (req, res) => {
         console.error("❌ Error forwarding alert:", error.message);
         return res.status(500).json({ success: false, message: 'Failed to forward alert', error: error.message });
     }
+});
+
 /**
  * Endpoint specifically for routing eScooter make + model details to n8n
  */
