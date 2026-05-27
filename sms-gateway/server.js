@@ -194,9 +194,9 @@ app.post('/api/send-sms', (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { deviceId, address, body, mediaUrl } = req.body;
+  const { deviceId, address, body, mediaUrl, action: reqAction } = req.body;
 
-  if (!deviceId || !address || !body) {
+  if (!deviceId || !address || (!body && reqAction !== 'dial')) {
     return res.status(400).json({ error: 'Missing deviceId, address, or body' });
   }
 
@@ -205,14 +205,15 @@ app.post('/api/send-sms', (req, res) => {
     return res.status(404).json({ error: `Device ${deviceId} is not connected` });
   }
 
-  // Support both SMS and MMS actions
-  const action = mediaUrl ? 'send_mms' : 'send_sms';
+  // Support both SMS and MMS actions, as well as custom actions (like 'dial')
+  const action = req.body.action || (mediaUrl ? 'send_mms' : 'send_sms');
   const payload = {
     action,
     data: { 
       address, 
       body,
-      ...(mediaUrl && { mediaUrl })
+      ...(mediaUrl && { mediaUrl }),
+      ...(req.body.data || {}) // Merge any additional data
     }
   };
 
