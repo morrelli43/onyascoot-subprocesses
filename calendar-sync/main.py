@@ -125,7 +125,12 @@ class WebhookServer:
         booking.customer_suburb = payload.get('customer_suburb') or payload.get('customerSuburb') or payload.get('suburb')
 
         # Address + location
-        booking.customer_address = payload.get('customer_address') or payload.get('customerAddress') or payload.get('address')
+        addr_line = payload.get('customer_address') or payload.get('customerAddress') or payload.get('address')
+        state = payload.get('customer_state') or payload.get('customerState') or payload.get('state')
+        postcode = payload.get('customer_postcode') or payload.get('customerPostcode') or payload.get('postcode')
+        
+        addr_parts = [addr_line, booking.customer_suburb, state, postcode]
+        booking.customer_address = ", ".join([p for p in addr_parts if p]).strip()
         booking.location = booking.customer_address or payload.get('location') or 'OnyaScoot'
 
         # Notes
