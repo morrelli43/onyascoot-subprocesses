@@ -35,46 +35,59 @@ class GoogleContactsConnector:
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.service = None
+        import threading
+        self._auth_lock = threading.Lock()
     
     def authenticate(self):
         """Authenticate with Google API."""
-        creds = None
-        
-        # Load existing token
-        if os.path.exists(self.token_file):
-            if os.path.getsize(self.token_file) == 0:
-                print(f"  ⚠️ Warning: Token file {self.token_file} is empty.")
-                # Force re-authentication or re-generation
-            else:
-                try:
-                    creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
-                except Exception as e:
-                    print(f"  ⚠️ Error loading token from {self.token_file}: {e}")
-        
-        # Refresh or get new credentials
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"  ⚠️ Error refreshing token: {e}")
-                    creds = None # Force re-auth
+        with self._auth_lock:
+            if self.service:
+                return
+            creds = None
             
-            if not creds:
-                if not os.path.exists(self.credentials_file) or os.path.getsize(self.credentials_file) == 0:
-                    raise FileNotFoundError(
-                        f"Credentials file {self.credentials_file} is missing or empty. "
-                        "Check your GitHub Secrets and deployment logs."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_file, self.SCOPES)
-                creds = flow.run_local_server(port=0)
+            # Load existing token
+            if os.path.exists(self.token_file):
+                if os.path.getsize(self.token_file) == 0:
+                    print(f"  ⚠️ Warning: Token file {self.token_file} is empty.")
+                    # Force re-authentication or re-generation
+                else:
+                    try:
+                        creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
+                    except Exception as e:
+                        print(f"  ⚠️ Error loading token from {self.token_file}: {e}")
             
-            # Save credentials
-            with open(self.token_file, 'w') as token:
-                token.write(creds.to_json())
-        
-        self.service = build('people', 'v1', credentials=creds)
+            # Refresh or get new credentials
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        creds.refresh(Request())
+                    except Exception as e:
+                        print(f"  ⚠️ Error refreshing token: {e}")
+                        creds = None # Force re-auth
+                
+                if not creds:
+                    if not os.path.exists(self.credentials_file) or os.path.getsize(self.credentials_file) == 0:
+                        raise FileNotFoundError(
+                            f"Credentials file {self.credentials_file} is missing or empty. "
+                            "Check your GitHub Secrets and deployment logs."
+                        )
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        self.credentials_file, self.SCOPES)
+                    creds = flow.run_local_server(port=0)
+                
+                # Save credentials
+                with open(self.token_file, 'w') as token:
+                    token.write(creds.to_json())
+            
+            import httplib2
+            import google_auth_httplib2
+            from googleapiclient.http import HttpRequest
+
+            def build_request(http, *args, **kwargs):
+                new_http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http())
+                return HttpRequest(new_http, *args, **kwargs)
+
+            self.service = build('people', 'v1', credentials=creds, requestBuilder=build_request)
     
     def fetch_contacts(self) -> List[Contact]:
         """Fetch all contacts from Google."""

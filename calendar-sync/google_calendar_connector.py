@@ -31,48 +31,61 @@ class GoogleCalendarConnector:
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.service = None
+        import threading
+        self._auth_lock = threading.Lock()
         
     def authenticate(self):
         """Authenticate with Google API."""
-        creds = None
-        
-        # 1. Check if token file exists and is not empty
-        if os.path.exists(self.token_file):
-            if os.path.getsize(self.token_file) == 0:
-                print(f"  ⚠️ Warning: Token file {self.token_file} is empty.")
-            else:
-                try:
-                    creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
-                except Exception as e:
-                    print(f"  ⚠️ Error loading token from {self.token_file}: {e}")
-        
-        # 2. Refresh or validate
-        if not creds or not creds.valid:
-            # If we have an expired token with a refresh token, try refreshing it first
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    from google.auth.transport.requests import Request
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"  ⚠️ Error refreshing token: {e}")
-                    creds = None # Force error below
+        with self._auth_lock:
+            if self.service:
+                return
+            creds = None
             
+            # 1. Check if token file exists and is not empty
+            if os.path.exists(self.token_file):
+                if os.path.getsize(self.token_file) == 0:
+                    print(f"  ⚠️ Warning: Token file {self.token_file} is empty.")
+                else:
+                    try:
+                        creds = Credentials.from_authorized_user_file(self.token_file, self.SCOPES)
+                    except Exception as e:
+                        print(f"  ⚠️ Error loading token from {self.token_file}: {e}")
+            
+            # 2. Refresh or validate
             if not creds or not creds.valid:
-                # Check credentials file integrity
-                if not os.path.exists(self.credentials_file) or os.path.getsize(self.credentials_file) == 0:
-                    raise FileNotFoundError(
-                        f"Google credentials file {self.credentials_file} is missing or empty. "
-                        "Check your GitHub Secrets (GOOGLE_CREDENTIALS_JSON) and deployment logs."
+                # If we have an expired token with a refresh token, try refreshing it first
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        from google.auth.transport.requests import Request
+                        creds.refresh(Request())
+                    except Exception as e:
+                        print(f"  ⚠️ Error refreshing token: {e}")
+                        creds = None # Force error below
+                
+                if not creds or not creds.valid:
+                    # Check credentials file integrity
+                    if not os.path.exists(self.credentials_file) or os.path.getsize(self.credentials_file) == 0:
+                        raise FileNotFoundError(
+                            f"Google credentials file {self.credentials_file} is missing or empty. "
+                            "Check your GitHub Secrets (GOOGLE_CREDENTIALS_JSON) and deployment logs."
+                        )
+                    
+                    # In a headless server environment, we can't run flow.run_local_server.
+                    # We must rely on the provided token.json.
+                    raise ValueError(
+                        f"Invalid or missing Google tokens in /app/env_files/{self.token_file}. "
+                        "Ensure your GOOGLE_TOKEN_JSON secret is correctly populated in GitHub."
                     )
                 
-                # In a headless server environment, we can't run flow.run_local_server.
-                # We must rely on the provided token.json.
-                raise ValueError(
-                    f"Invalid or missing Google tokens in /app/env_files/{self.token_file}. "
-                    "Ensure your GOOGLE_TOKEN_JSON secret is correctly populated in GitHub."
-                )
-            
-        self.service = build('calendar', 'v3', credentials=creds)
+            import httplib2
+            import google_auth_httplib2
+            from googleapiclient.http import HttpRequest
+
+            def build_request(http, *args, **kwargs):
+                new_http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http())
+                return HttpRequest(new_http, *args, **kwargs)
+
+            self.service = build('calendar', 'v3', credentials=creds, requestBuilder=build_request)
         
     def fetch_events(self, calendar_id: str = 'primary', time_min: Optional[datetime] = None) -> List[dict]:
         """Fetch upcoming events from Google Calendar."""
