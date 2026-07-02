@@ -32,6 +32,8 @@ class WebhookServer:
 
         if 'google' in self.engine.connectors:
             try:
+                if not self.engine.connectors['google'].service:
+                    self.engine.connectors['google'].authenticate()
                 # Test connection using an endpoint that only requires contacts scope
                 self.engine.connectors['google'].service.people().connections().list(
                     resourceName='people/me',

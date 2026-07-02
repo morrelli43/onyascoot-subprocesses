@@ -28,33 +28,78 @@ class GoogleContactsConnector:
         if not GOOGLE_AVAILABLE:
             raise ImportError("Google API libraries not installed. Run: pip install -r requirements.txt")
         
+        def _parse_credentials_str(content: str):
+            """Parse stringified Google Credentials object into valid JSON string."""
+            import re
+            import json
+            val = content.strip()
+            if not val.startswith('{'):
+                return None
+            try:
+                json.loads(val)
+                return val
+            except Exception:
+                pass
+            
+            # Match pattern of Credentials.__str__
+            pattern = (
+                r"\{token:\s*(?P<token>.*?),\s*"
+                r"refresh_token:\s*(?P<refresh_token>.*?),\s*"
+                r"token_uri:\s*(?P<token_uri>.*?),\s*"
+                r"client_id:\s*(?P<client_id>.*?),\s*"
+                r"client_secret:\s*(?P<client_secret>.*?),\s*"
+                r"scopes:\s*\[(?P<scopes>.*?)\],\s*"
+                r"universe_domain:\s*(?P<universe_domain>.*?),\s*"
+                r"account:\s*(?P<account>.*?),\s*"
+                r"expiry:\s*(?P<expiry>.*?)\}"
+            )
+            match = re.match(pattern, val)
+            if match:
+                data = match.groupdict()
+                scopes = [s.strip() for s in data['scopes'].split(',') if s.strip()]
+                json_data = {
+                    "token": data['token'],
+                    "refresh_token": data['refresh_token'],
+                    "token_uri": data['token_uri'],
+                    "client_id": data['client_id'],
+                    "client_secret": data['client_secret'],
+                    "scopes": scopes,
+                    "universe_domain": data['universe_domain'],
+                    "account": data['account'],
+                    "expiry": data['expiry']
+                }
+                return json.dumps(json_data)
+            return None
+
         # Self-healing: if credentials_file or token_file is a raw JSON string instead of a path
-        if credentials_file.strip().startswith('{'):
+        parsed_credentials = _parse_credentials_str(credentials_file)
+        if parsed_credentials:
             actual_credentials_path = 'env_files/credentials.json'
             try:
                 os.makedirs(os.path.dirname(actual_credentials_path), exist_ok=True)
                 with open(actual_credentials_path, 'w') as f:
-                    f.write(credentials_file)
+                    f.write(parsed_credentials)
                 credentials_file = actual_credentials_path
             except Exception as e:
                 try:
                     with open('credentials.json', 'w') as f:
-                        f.write(credentials_file)
+                        f.write(parsed_credentials)
                     credentials_file = 'credentials.json'
                 except Exception:
                     pass
 
-        if token_file.strip().startswith('{'):
+        parsed_token = _parse_credentials_str(token_file)
+        if parsed_token:
             actual_token_path = 'env_files/token.json'
             try:
                 os.makedirs(os.path.dirname(actual_token_path), exist_ok=True)
                 with open(actual_token_path, 'w') as f:
-                    f.write(token_file)
+                    f.write(parsed_token)
                 token_file = actual_token_path
             except Exception as e:
                 try:
                     with open('token.json', 'w') as f:
-                        f.write(token_file)
+                        f.write(parsed_token)
                     token_file = 'token.json'
                 except Exception:
                     pass
