@@ -18,8 +18,8 @@ app.get('/health', (req, res) => {
 app.post('/send-it', async (req, res) => {
     const payload = req.body;
 
-    // Attach subject for n8n webhooks
-    payload.subject = 'new_webform_submission';
+    // Attach subject for n8n webhooks if not already set
+    payload.subject = payload.subject || 'new_webform_submission';
 
     console.log(`\n[Nodeifier] Received push request: ${payload.title || 'No Title'}`);
 
