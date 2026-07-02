@@ -28,6 +28,37 @@ class GoogleContactsConnector:
         if not GOOGLE_AVAILABLE:
             raise ImportError("Google API libraries not installed. Run: pip install -r requirements.txt")
         
+        # Self-healing: if credentials_file or token_file is a raw JSON string instead of a path
+        if credentials_file.strip().startswith('{'):
+            actual_credentials_path = 'env_files/credentials.json'
+            try:
+                os.makedirs(os.path.dirname(actual_credentials_path), exist_ok=True)
+                with open(actual_credentials_path, 'w') as f:
+                    f.write(credentials_file)
+                credentials_file = actual_credentials_path
+            except Exception as e:
+                try:
+                    with open('credentials.json', 'w') as f:
+                        f.write(credentials_file)
+                    credentials_file = 'credentials.json'
+                except Exception:
+                    pass
+
+        if token_file.strip().startswith('{'):
+            actual_token_path = 'env_files/token.json'
+            try:
+                os.makedirs(os.path.dirname(actual_token_path), exist_ok=True)
+                with open(actual_token_path, 'w') as f:
+                    f.write(token_file)
+                token_file = actual_token_path
+            except Exception as e:
+                try:
+                    with open('token.json', 'w') as f:
+                        f.write(token_file)
+                    token_file = 'token.json'
+                except Exception:
+                    pass
+
         # Validate file paths to prevent directory traversal
         if '..' in credentials_file or '..' in token_file:
             raise ValueError("Invalid file path: directory traversal not allowed")
