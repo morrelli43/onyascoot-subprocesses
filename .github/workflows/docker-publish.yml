@@ -335,4 +335,7 @@ jobs:
             
             # Show running containers
             docker compose -f docker-compose.subprocesses.yml --env-file .env.subprocesses -p $PROJECT_NAME ps
+            
+            # Logout of GHCR so expired credentials aren't persisted in ~/.docker/config.json
+            docker logout ghcr.io || true
           EOF
