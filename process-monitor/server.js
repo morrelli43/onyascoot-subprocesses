@@ -148,6 +148,32 @@ setInterval(pollContainers, 10000);
 // Initial poll
 pollContainers();
 
+// --- Background Task: Process Drafts ---
+async function triggerProcessDrafts() {
+    const portalHost = process.env.OPS_PORTAL_HOST || 'http://onya-operations-live-app:3000';
+    try {
+        const response = await fetch(`${portalHost}/api/cron/process-drafts`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(OPS_API_KEY ? { 'Authorization': `Bearer ${OPS_API_KEY}` } : {})
+            }
+        });
+        if (!response.ok) {
+            console.error(`[Monitor] Failed to trigger process-drafts: ${response.statusText}`);
+        } else {
+            const data = await response.json();
+            if (data.message && data.message !== 'No draft messages to process') {
+                console.log(`[Monitor] Process drafts result: ${data.message}`);
+            }
+        }
+    } catch (err) {
+        console.error(`[Monitor] Error triggering process-drafts:`, err.message);
+    }
+}
+setInterval(triggerProcessDrafts, 30000);
+triggerProcessDrafts();
+
 // --- HTTP API ---
 
 app.get('/api/status', (req, res) => {
