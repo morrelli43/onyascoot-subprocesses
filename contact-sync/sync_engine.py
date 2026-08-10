@@ -175,8 +175,8 @@ class SyncEngine:
 
         # Completed job notes formatting (Date, Price, Escooter, Service)
         job_date = payload.get('completed_at') or payload.get('job_date') or payload.get('date')
-        price = payload.get('total_price') or payload.get('price')
-        service = payload.get('service_name') or payload.get('service')
+        price = payload.get('total_price') or payload.get('price') or payload.get('job_price')
+        service = payload.get('service_name') or payload.get('service') or payload.get('job_service') or payload.get('issue')
         if (job_date or price) and service:
             price_str = f" (${price})" if price else ""
             date_str = f"[{job_date}] " if job_date else ""
