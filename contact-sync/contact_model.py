@@ -215,8 +215,13 @@ class Contact:
                 self.source_ids = {}
             self.source_ids.update(other.source_ids)
         
-        # Ensure only 1 address maximum and parse single lines
+        # Preserve secondary address if multiple addresses exist
         if len(self.addresses) > 1:
+            sec = self.addresses[1]
+            sec_parts = [sec.get('street', ''), sec.get('street2', ''), sec.get('city', ''), sec.get('state', ''), sec.get('postal_code', '')]
+            sec_str = ', '.join([p for p in sec_parts if p]).strip()
+            if sec_str and not self.extra_fields.get('secondary_address'):
+                self.extra_fields['secondary_address'] = sec_str
             self.addresses = [self.addresses[0]]
             
         self.normalize_addresses()

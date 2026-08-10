@@ -62,6 +62,11 @@ class SyncEngine:
                     'country': country
                 })
                 
+            # Map secondary address
+            sec_addr = data.get('secondary_address') or data.get('address2') or data.get('address_line_2')
+            if sec_addr:
+                contact.extra_fields['secondary_address'] = str(sec_addr)
+
             # Escooters
             escooter_val = data.get('escooter1') or data.get('escooter')
             if not escooter_val:
@@ -73,11 +78,25 @@ class SyncEngine:
             if escooter_val:
                 contact.extra_fields['escooter1'] = escooter_val
             
-            for i in range(2, 4):
+            for i in range(1, 4):
                 key = f'escooter{i}'
                 if data.get(key):
-                    contact.extra_fields[key] = data[key]
+                    contact.extra_fields[key] = str(data[key])
                     
+            # Completed job notes formatting (Date, Price, Escooter, Service)
+            job_date = data.get('job_date') or data.get('date')
+            job_price = data.get('job_price') or data.get('price')
+            job_service = data.get('job_service') or data.get('service_name')
+            if (job_date or job_price) and job_service:
+                price_str = f" (${job_price})" if job_price else ""
+                date_str = f"[{job_date}] " if job_date else ""
+                scooter_label = contact.extra_fields.get('escooter1', 'eScooter')
+                job_line = f"{date_str}{scooter_label}: {job_service}{price_str}"
+                if contact.notes and job_line not in contact.notes:
+                    contact.notes = f"{job_line}\n{contact.notes}"
+                elif not contact.notes:
+                    contact.notes = job_line
+
             # Set memory ID
             import time
             contact.source_ids[source_name] = str(time.time())
@@ -136,13 +155,37 @@ class SyncEngine:
                 'country': country,
             }]
 
+        sec_addr = payload.get('secondary_address') or payload.get('address_line_2') or payload.get('addressLine2') or ''
+        if sec_addr:
+            contact.extra_fields['secondary_address'] = str(sec_addr)
+
         make = payload.get('escooter_make') or payload.get('scooter_make') or payload.get('scooterMake') or ''
         model = payload.get('escooter_model') or payload.get('scooter_model') or payload.get('scooterModel') or ''
         escooter = payload.get('escooter') or payload.get('escooter1') or payload.get('scooter') or ''
-        if not escooter:
+        if not escooter and (make or model):
             escooter = f"{make} {model}".strip()
         if escooter:
             contact.extra_fields['escooter1'] = escooter
+
+        for i in range(1, 4):
+            key = f'escooter{i}'
+            val = payload.get(key)
+            if val:
+                contact.extra_fields[key] = str(val)
+
+        # Completed job notes formatting (Date, Price, Escooter, Service)
+        job_date = payload.get('completed_at') or payload.get('job_date') or payload.get('date')
+        price = payload.get('total_price') or payload.get('price')
+        service = payload.get('service_name') or payload.get('service')
+        if (job_date or price) and service:
+            price_str = f" (${price})" if price else ""
+            date_str = f"[{job_date}] " if job_date else ""
+            scooter_label = contact.extra_fields.get('escooter1', 'eScooter')
+            job_line = f"{date_str}{scooter_label}: {service}{price_str}"
+            if contact.notes and job_line not in contact.notes:
+                contact.notes = f"{job_line}\n{contact.notes}"
+            elif not contact.notes:
+                contact.notes = job_line
 
         return contact
 

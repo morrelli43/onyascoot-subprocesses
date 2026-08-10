@@ -217,14 +217,16 @@ class GoogleContactsConnector:
         # Extract company and Job Title (escooter1)
         orgs = person.get('organizations', [])
         if orgs:
-            contact.company = orgs[0].get('name')
-            title = orgs[0].get('title')
-            if title:
-                contact.extra_fields['escooter1'] = title
+            org_name = orgs[0].get('name')
+            org_title = orgs[0].get('title')
+            if org_name:
+                contact.company = org_name
+            if org_title and 'escooter1' not in contact.extra_fields:
+                contact.extra_fields['escooter1'] = org_title
         
         # Extract addresses
         addresses = person.get('addresses', [])
-        for addr in addresses:
+        for idx, addr in enumerate(addresses):
             street_full = addr.get('streetAddress', '')
             # Handle both newline (old) and comma (new) separators
             if '\n' in street_full:
@@ -234,9 +236,6 @@ class GoogleContactsConnector:
             elif ', ' in street_full:
                 # Common AU format: "Unit X, Street Y" - we want to keep them separated
                 street_parts = street_full.split(', ', 1)
-                # If there's a comma, the unit/apt is usually the first part
-                # but our internal model expects street1, street2. 
-                # Let's be smart: if the first part is short (like "Unit 1" or "Apt 2"), it's street2.
                 if len(street_parts[0]) < 15 and any(word in street_parts[0].lower() for word in ['unit', 'apt', 'flat', 'level']):
                     street = street_parts[1]
                     street2 = street_parts[0]
@@ -247,16 +246,22 @@ class GoogleContactsConnector:
                 street = street_full
                 street2 = ''
             
-            # Use only the first primary address
-            contact.addresses = [{
+            addr_obj = {
                 'street': street,
                 'street2': street2,
                 'city': addr.get('city', ''),
                 'state': addr.get('region', ''),
                 'postal_code': addr.get('postalCode', ''),
                 'country': addr.get('country', '')
-            }]
-            break  # Only process the first address
+            }
+
+            if idx == 0:
+                contact.addresses = [addr_obj]
+            elif idx == 1 and 'secondary_address' not in contact.extra_fields:
+                sec_parts = [addr_obj['street'], addr_obj['street2'], addr_obj['city'], addr_obj['state'], addr_obj['postal_code']]
+                sec_str = ', '.join([p for p in sec_parts if p]).strip()
+                if sec_str:
+                    contact.extra_fields['secondary_address'] = sec_str
         
         # Extract notes
         bios = person.get('biographies', [])
@@ -269,7 +274,7 @@ class GoogleContactsConnector:
             key = field.get('key')
             value = field.get('value')
             if key and value:
-                if key in ['escooter1', 'escooter2', 'escooter3']:
+                if key in ['escooter1', 'escooter2', 'escooter3', 'secondary_address']:
                     contact.extra_fields[key] = value
                 elif key == 'square_id':
                     contact.source_ids['square'] = value
@@ -452,12 +457,16 @@ class GoogleContactsConnector:
         company_val = contact.company
         title_val = contact.extra_fields.get('escooter1')
         
-        if company_val or title_val:
+        # Populate Business Name (organizations[0].name) with company or fallback to escooter1
+        org_name = company_val or title_val
+        org_title = title_val if (company_val and company_val != title_val) else None
+        
+        if org_name or org_title:
             org_entry = {}
-            if company_val:
-                org_entry['name'] = company_val
-            if title_val:
-                org_entry['title'] = title_val
+            if org_name:
+                org_entry['name'] = org_name
+            if org_title:
+                org_entry['title'] = org_title
                 
             person['organizations'] = [org_entry]
         else:
@@ -497,14 +506,14 @@ class GoogleContactsConnector:
             
         # User Defined Fields (Custom Fields)
         person['userDefined'] = []
-        for key in ['escooter1', 'escooter2', 'escooter3']:
+        for key in ['escooter1', 'escooter2', 'escooter3', 'secondary_address']:
             val = contact.extra_fields.get(key, '')
             # Google API rejects value: "" with a 400 Invalid Argument. 
             # To delete a custom field, simply omitting it from the appended array entirely is required.
             if val:
                 person['userDefined'].append({
                     'key': key,
-                    'value': val
+                    'value': str(val)
                 })
                 
         # Also store the Square Customer ID in Google Contacts custom fields natively

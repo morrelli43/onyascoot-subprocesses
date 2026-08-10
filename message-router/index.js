@@ -27,7 +27,7 @@ app.post('/submit', async (req, res) => {
 
     const {
         first_name, surname, number, location,
-        address_line_1, suburb, state, postcode, country,
+        address_line_1, address_line_2, secondary_address, suburb, state, postcode, country,
         date_time, scooter_count, has_photos, total_photos_all,
         scooters = []
     } = rawData;
@@ -54,6 +54,7 @@ app.post('/submit', async (req, res) => {
         phone: number,
         email: "",
         address_line_1: address_line_1 || "",
+        secondary_address: secondary_address || address_line_2 || "",
         suburb: suburb || "",
         state: state || "",
         postcode: postcode || "",

@@ -61,6 +61,7 @@ class SquareConnector:
                 ('escooter1', 'eScooter 1'),
                 ('escooter2', 'eScooter 2'),
                 ('escooter3', 'eScooter 3'),
+                ('secondary_address', 'Secondary Address'),
                 ('webform_notes', 'Webform Notes')
             ]
             
@@ -210,7 +211,7 @@ class SquareConnector:
                      value = attr.get('value')
                      if key and value is not None:
                          # Match literal key OR discovered (qualified) key
-                         mapped_key = rev_map.get(key) or (key if key in ['escooter1', 'escooter2', 'escooter3', 'webform_notes'] else None)
+                         mapped_key = rev_map.get(key) or (key if key in ['escooter1', 'escooter2', 'escooter3', 'secondary_address', 'webform_notes'] else None)
                          if mapped_key:
                              if mapped_key == 'webform_notes':
                                  contact.notes = str(value)
@@ -219,7 +220,7 @@ class SquareConnector:
              else:
                  for key, value_obj in custom_attrs.items():
                      val = value_obj.get('value') if isinstance(value_obj, dict) else value_obj
-                     mapped_key = rev_map.get(key) or (key if key in ['escooter1', 'escooter2', 'escooter3', 'webform_notes'] else None)
+                     mapped_key = rev_map.get(key) or (key if key in ['escooter1', 'escooter2', 'escooter3', 'secondary_address', 'webform_notes'] else None)
                      if mapped_key:
                          if mapped_key == 'webform_notes':
                              contact.notes = str(val)
@@ -348,7 +349,7 @@ class SquareConnector:
 
     def _sync_custom_attributes(self, customer_id: str, contact: Contact):
         """Sync custom attributes for a customer using the upsert endpoint."""
-        attrs_to_sync = {k: v for k, v in contact.extra_fields.items() if k in ['escooter1', 'escooter2', 'escooter3']}
+        attrs_to_sync = {k: v for k, v in contact.extra_fields.items() if k in ['escooter1', 'escooter2', 'escooter3', 'secondary_address']}
         if contact.notes is not None:
             attrs_to_sync['webform_notes'] = contact.notes
             
