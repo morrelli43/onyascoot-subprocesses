@@ -73,6 +73,35 @@ app.post('/ai-escooter-details-searcher', async (req, res) => {
     }
 });
 
+/**
+ * Endpoint specifically for routing quote lines for AI title generation
+ */
+app.post('/ai-quote-title-generator', async (req, res) => {
+    const payload = req.body;
+
+    console.log(`\n[Nodeifier] Received AI quote title generator request: ${payload.title || 'No Title'}`);
+
+    // Direct target webhook URL for AI quote title generator
+    const pushWebhookUrl = 'https://hooks.morrelli43media.com/webhook/ai-quote-title-generator';
+
+    try {
+        const response = await axios.post(pushWebhookUrl, payload, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.status >= 200 && response.status < 300) {
+            console.log("✅ AI quote title fetch forwarded successfully.");
+            return res.status(200).json(response.data);
+        } else {
+            console.error("⚠️ External webhook returned:", response.status);
+            return res.status(response.status).json({ success: false, message: 'External webhook error' });
+        }
+    } catch (error) {
+        console.error("❌ Error forwarding AI quote title fetch:", error.message);
+        return res.status(500).json({ success: false, message: 'Failed to forward AI quote title fetch', error: error.message });
+    }
+});
+
 
 const PORT = process.env.PORT || 4312;
 app.listen(PORT, () => {
