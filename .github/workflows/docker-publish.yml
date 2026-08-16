@@ -34,6 +34,7 @@ jobs:
             sms-gateway: 'sms-gateway/**'
             googlemapsapi: 'googlemapsapi/**'
             process-monitor: 'process-monitor/**'
+            background-remover: 'background-remover/**'
 
   build:
     needs: filter
@@ -67,6 +68,8 @@ jobs:
             image_suffix: "_googlemapsapi"
           - service: process-monitor
             image_suffix: "_process_monitor"
+          - service: background-remover
+            image_suffix: "_background_remover"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

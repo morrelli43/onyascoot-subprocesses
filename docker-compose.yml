@@ -188,11 +188,10 @@ services:
       - "${PROCESS_MONITOR_PORT:-4316}:4316"
 
   background-remover:
-    image: danielgatis/rembg
+    build: ./background-remover
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_background_remover:${IMAGE_TAG:-main}
     container_name: background-remover
-    platform: linux/amd64
     restart: unless-stopped
-    command: s --host 0.0.0.0 --port 4317
     dns:
       - 8.8.8.8
       - 8.8.4.4
