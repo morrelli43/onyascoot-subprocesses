@@ -238,6 +238,7 @@ jobs:
           GOOGLEMAPSAPI_PORT: ${{ vars.GOOGLEMAPSAPI_PORT }}
           GOOGLE_MAPS_API_KEY_VAL: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           GOOGLEMAPSAPI_SERVICE_API_KEY_VAL: ${{ secrets.GOOGLEMAPSAPI_SERVICE_API_KEY }}
+          BACKGROUND_REMOVER_PORT: ${{ vars.BACKGROUND_REMOVER_PORT }}
 
         run: |
           # Define environment-specific variables
@@ -310,6 +311,7 @@ jobs:
             echo "GOOGLEMAPSAPI_PORT=$GOOGLEMAPSAPI_PORT" >> .env.subprocesses
             echo "GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY_VAL" >> .env.subprocesses
             echo "GOOGLEMAPSAPI_SERVICE_API_KEY=$GOOGLEMAPSAPI_SERVICE_API_KEY_VAL" >> .env.subprocesses
+            echo "BACKGROUND_REMOVER_PORT=$BACKGROUND_REMOVER_PORT" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."
