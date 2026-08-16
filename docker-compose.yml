@@ -190,6 +190,7 @@ services:
   background-remover:
     image: danielgatis/rembg
     container_name: background-remover
+    platform: linux/amd64
     restart: unless-stopped
     command: s --host 0.0.0.0 --port 4317
     dns:
