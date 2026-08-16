@@ -193,7 +193,33 @@ class GoogleContactsConnector:
                 break
         
         return contacts
-    
+
+    def search_contact(self, query: str) -> List[Contact]:
+        """Search for specific contacts by query without loading the entire address book."""
+        if not self.service:
+            self.authenticate()
+
+        if not query or not query.strip():
+            return []
+
+        try:
+            results = self.service.people().searchContacts(
+                query=query.strip(),
+                readMask='names,emailAddresses,phoneNumbers,organizations,addresses,biographies,userDefined'
+            ).execute()
+
+            results_list = results.get('results', [])
+            contacts = []
+            for r in results_list:
+                person = r.get('person', {})
+                contact = self._convert_to_contact(person)
+                if contact:
+                    contacts.append(contact)
+            return contacts
+        except Exception as e:
+            print(f"[GoogleConnector] searchContacts failed for '{query}': {e}")
+            return []
+
     def _convert_to_contact(self, person: dict) -> Optional[Contact]:
         """Convert Google person object to Contact."""
         contact = Contact()

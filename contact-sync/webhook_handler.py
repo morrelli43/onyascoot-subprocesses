@@ -181,17 +181,14 @@ class WebhookServer:
 
         try:
             if action == 'delete':
-                result = self.engine.delete_contact_from_operations(payload)
-                status = 404 if result.get('status') == 'not_found' else 200
-                return jsonify(result), status
+                self._run_in_background(self.engine.delete_contact_from_operations, payload)
+                return jsonify({'status': 'queued', 'action': 'delete'}), 200
 
-            result = self.engine.upsert_contact_from_operations(payload)
-            return jsonify(result), 200
-        except ValueError as e:
-            return jsonify({'error': 'bad_request', 'message': str(e)}), 400
+            self._run_in_background(self.engine.upsert_contact_from_operations, payload)
+            return jsonify({'status': 'queued', 'action': 'upsert'}), 200
         except Exception as e:
             print(f"[OPS-CONTACT] Error: {e}")
-            return jsonify({'error': 'sync_failed', 'message': str(e)}), 500
+            return jsonify({'error': 'dispatch_failed', 'message': str(e)}), 500
 
     def _run_in_background(self, func, *args):
         """Helper to run task in daemon thread without blocking the response."""

@@ -201,33 +201,39 @@ class SyncEngine:
         with self.lock:
             contact = self._contact_from_ops_payload(payload)
 
-            # Try deterministic lookup by customer_uid first.
             existing_google = None
-            google_contacts = self.connectors['google'].fetch_contacts()
-            for gc in google_contacts:
+            google_conn = self.connectors['google']
+
+            # 1. Fast targeted search by phone, customer_uid, or full name
+            candidates = []
+            if hasattr(google_conn, 'search_contact'):
+                if contact.normalized_phone:
+                    candidates = google_conn.search_contact(contact.normalized_phone)
+                if not candidates and customer_uid:
+                    candidates = google_conn.search_contact(customer_uid)
+                if not candidates and (contact.first_name or contact.last_name):
+                    full_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+                    candidates = google_conn.search_contact(full_name)
+
+            for gc in candidates:
                 if getattr(gc, 'custom_id', None) == customer_uid:
                     existing_google = gc
                     break
-
-            # Fallback for older records that may predate customer_uid tagging.
-            if not existing_google:
-                incoming_phone = contact.normalized_phone
-                incoming_email = (contact.email or '').lower().strip()
-                for gc in google_contacts:
-                    if incoming_phone and gc.normalized_phone == incoming_phone:
-                        existing_google = gc
-                        break
-                    if incoming_email and gc.email and gc.email.lower().strip() == incoming_email:
-                        existing_google = gc
-                        break
+                if contact.normalized_phone and gc.normalized_phone == contact.normalized_phone:
+                    existing_google = gc
+                    break
+                if contact.email and gc.email and gc.email.lower().strip() == contact.email.lower().strip():
+                    existing_google = gc
+                    break
 
             if existing_google and existing_google.source_ids.get('google'):
                 contact.source_ids['google'] = existing_google.source_ids.get('google')
 
-            ok = self.connectors['google'].push_contact(contact)
+            ok = google_conn.push_contact(contact)
             if not ok:
                 raise RuntimeError('Google push_contact returned false')
 
+            print(f"[OPS-CONTACT] Successfully synced {customer_uid} to Google ({contact.source_ids.get('google')})")
             return {
                 'status': 'ok',
                 'action': 'upsert',
@@ -245,12 +251,15 @@ class SyncEngine:
             raise ValueError('Missing customer_uid (or customerUid)')
 
         with self.lock:
-            google_contacts = self.connectors['google'].fetch_contacts()
+            google_conn = self.connectors['google']
             target = None
-            for gc in google_contacts:
-                if getattr(gc, 'custom_id', None) == customer_uid:
-                    target = gc
-                    break
+
+            if hasattr(google_conn, 'search_contact'):
+                candidates = google_conn.search_contact(customer_uid)
+                for gc in candidates:
+                    if getattr(gc, 'custom_id', None) == customer_uid:
+                        target = gc
+                        break
 
             if not target or not target.source_ids.get('google'):
                 return {
@@ -259,7 +268,7 @@ class SyncEngine:
                     'customer_uid': customer_uid
                 }
 
-            ok = self.connectors['google'].delete_contact(target.source_ids['google'])
+            ok = google_conn.delete_contact(target.source_ids['google'])
             if not ok:
                 raise RuntimeError('Google delete_contact returned false')
 
