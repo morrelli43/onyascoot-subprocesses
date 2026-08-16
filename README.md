@@ -30,7 +30,6 @@ graph TD
 | **Email Service** | `4311` | Pure SMTP service for sending alerts and confirmations. |
 | **Nodeifier** | `4312` | Centralized alerting service for pushing notifications to webhooks. |
 | **Ops Forwarder** | `4313` | Forwards form submissions to the OYS Operations site. |
-| **Background Remover** | `4317` | Web server for background removal on images using `danielgatis/rembg`. |
 
 ---
 

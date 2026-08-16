@@ -187,20 +187,6 @@ services:
     ports:
       - "${PROCESS_MONITOR_PORT:-4316}:4316"
 
-  background-remover:
-    build: ./background-remover
-    image: ghcr.io/morrelli43/onyascoot-subprocesses_background_remover:${IMAGE_TAG:-main}
-    container_name: background-remover
-    restart: unless-stopped
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-      - 1.1.1.1
-    environment:
-      - PORT=4317
-    ports:
-      - "${BACKGROUND_REMOVER_PORT:-4317}:4317"
-
 networks:
   default:
     name: ${DOCKER_NETWORK_NAME:-oys_frontend_live_net}
