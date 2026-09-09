@@ -116,7 +116,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    environment: ${{ github.ref_name }}
+    environment: ${{ github.ref_name == 'main' && 'live' || github.ref_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -126,16 +126,15 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL || vars.SSH_HOST_URL || 'onyascoot.com' }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME || vars.SSH_USERNAME || 'oyslive' }}
+          SSH_PORT: ${{ secrets.SSH_PORT || vars.SSH_PORT || 16340 }}
         run: |
           mkdir -p ~/.ssh/
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deployment_key
           chmod 600 ~/.ssh/deployment_key
-          # Scan keys on the correct port (Default to 22 if not set)
-          PORT=${SSH_PORT:-22}
-          ssh-keyscan -p $PORT -H "$SSH_HOST_URL" >> ~/.ssh/known_hosts
+          PORT=${SSH_PORT:-16340}
+          ssh-keyscan -p $PORT -H "$SSH_HOST_URL" >> ~/.ssh/known_hosts 2>/dev/null || true
 
           # Print the fingerprint of the private key
           echo "SSH Key Fingerprint:"
@@ -143,14 +142,14 @@ jobs:
 
       - name: Upload Google credentials to server
         env:
-          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL || vars.SSH_HOST_URL || 'onyascoot.com' }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME || vars.SSH_USERNAME || 'oyslive' }}
+          SSH_PORT: ${{ secrets.SSH_PORT || vars.SSH_PORT || 16340 }}
           DOCKER_FOLDER_WEBFILES: ${{ vars.DOCKER_FOLDER_WEBFILES }}
           SECRET_TOKEN: ${{ secrets.GOOGLE_TOKEN_JSON }}
           SECRET_CREDS: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: |
-          PORT=${SSH_PORT:-22}
+          PORT=${SSH_PORT:-16340}
           # Remove trailing slash from DOCKER_FOLDER_WEBFILES if present
           WEBFILES_DIR="${DOCKER_FOLDER_WEBFILES%/}"
           REMOTE_CRED_DIR="${WEBFILES_DIR:-deployments/oys_subprocesses}/oys_contacts/env_files"
@@ -190,9 +189,9 @@ jobs:
 
       - name: Deploy to Raspberry Pi
         env:
-          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_HOST_URL: ${{ secrets.SSH_HOST_URL || vars.SSH_HOST_URL || 'onyascoot.com' }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME || vars.SSH_USERNAME || 'oyslive' }}
+          SSH_PORT: ${{ secrets.SSH_PORT || vars.SSH_PORT || 16340 }}
           TARGET_DIR: ${{ vars.TARGET_DIR }}
           DOCKER_FOLDER_WEBFILES: ${{ vars.DOCKER_FOLDER_WEBFILES }}
           GH_REPO: ${{ github.repository }}
@@ -252,8 +251,8 @@ jobs:
           PROJECT_NAME="${REPO_NAME}-${IMAGE_TAG}"
           NETWORK_NAME="${PROJECT_NAME}"
 
-          # Use custom port if set, otherwise 22
-          PORT=${SSH_PORT:-22}
+          # Use custom port if set, otherwise 16340
+          PORT=${SSH_PORT:-16340}
           echo "Deploying to $SSH_HOST_URL:$PORT -> ~/$DEPLOY_DIR"
 
           # 0. Ensure target directory exists
