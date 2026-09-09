@@ -251,8 +251,16 @@ class WebhookServer:
             return jsonify({'error': 'unauthorized'}), 401
 
         days_ahead = int(request.args.get('days_ahead', 45))
+        allowed_emails_param = request.args.get('allowed_emails') or request.args.get('allowed_organizers')
+        allowed_organizers = None
+        if allowed_emails_param:
+            allowed_organizers = [e.strip() for e in allowed_emails_param.split(',') if e.strip()]
+
         try:
-            events = self.engine.google.fetch_upcoming_external_events(days_ahead=days_ahead)
+            events = self.engine.google.fetch_upcoming_external_events(
+                days_ahead=days_ahead,
+                allowed_organizers=allowed_organizers
+            )
             return jsonify({'status': 'ok', 'events': events})
         except Exception as e:
             print(f"[OPS-EXTERNAL-EVENTS] Error fetching external events: {e}")

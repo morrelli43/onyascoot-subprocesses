@@ -360,9 +360,10 @@ class GoogleCalendarConnector:
         self,
         calendar_id: str = 'primary',
         days_ahead: int = 45,
-        time_min: Optional[datetime] = None
+        time_min: Optional[datetime] = None,
+        allowed_organizers: Optional[List[str]] = None,
     ) -> List[dict]:
-        """Fetch upcoming non-job external/guest events from Google Calendar."""
+        """Fetch upcoming non-job external/guest events from Google Calendar matching allowed organizers."""
         if not self.service:
             self.authenticate()
 
@@ -376,6 +377,11 @@ class GoogleCalendarConnector:
             time_min = start_of_today
 
         time_max = time_min + timedelta(days=days_ahead)
+
+        if allowed_organizers is not None:
+            allowed_set = {e.strip().lower() for e in allowed_organizers if e and e.strip()}
+        else:
+            allowed_set = {'mcconnellkin@gmail.com'}
 
         raw_events = []
         page_token = None
@@ -402,7 +408,15 @@ class GoogleCalendarConnector:
 
             props = ev.get('extendedProperties', {}).get('private', {})
             # Exclude jobs and square bookings managed by OnyaScoot
-            if props.get('job_uid') or props.get('square_booking_id') or props.get('managed_by') == 'onyascoot_ops':
+            if props.get('ops_job_uid') or props.get('job_uid') or props.get('square_booking_id') or props.get('managed_by') == 'onyascoot_ops':
+                continue
+
+            organizer_email = (ev.get('organizer', {}).get('email') or ev.get('creator', {}).get('email') or '').strip().lower()
+            if allowed_set and organizer_email not in allowed_set:
+                continue
+
+            # Exclude self-created events if onyascoot@gmail.com is not in the whitelist
+            if organizer_email == 'onyascoot@gmail.com' and 'onyascoot@gmail.com' not in allowed_set:
                 continue
 
             # Determine responseStatus for onyascoot@gmail.com
@@ -434,6 +448,7 @@ class GoogleCalendarConnector:
                     'title': ev.get('summary') or 'Personal Event',
                     'description': ev.get('description') or '',
                     'location': ev.get('location') or '',
+                    'organizer_email': organizer_email or None,
                     'is_all_day': True,
                     'start_date': start_date_str,
                     'end_date': end_date_str,
@@ -468,6 +483,7 @@ class GoogleCalendarConnector:
                     'title': ev.get('summary') or 'Personal Event',
                     'description': ev.get('description') or '',
                     'location': ev.get('location') or '',
+                    'organizer_email': organizer_email or None,
                     'is_all_day': False,
                     'start_date': start_date_str,
                     'end_date': end_date_str,
