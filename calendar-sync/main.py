@@ -26,6 +26,9 @@ class WebhookServer:
         self.app.route('/webhooks/square', methods=['POST'])(self.square_webhook)
         self.app.route('/ops-calendar-sync', methods=['POST'])(self.ops_calendar_sync)
         self.app.route('/webhooks/operations/calendar', methods=['POST'])(self.ops_calendar_sync)
+        self.app.route('/ops-calendar-sync/external-events', methods=['GET'])(self.ops_external_events)
+        self.app.route('/ops-external-events', methods=['GET'])(self.ops_external_events)
+        self.app.route('/ops-calendar-sync/rsvp-event', methods=['POST'])(self.ops_rsvp_event)
         self.app.route('/health', methods=['GET'])(self.health_check)
         self.app.route('/<path:path>', methods=['POST', 'GET'])(self.catch_all)
 
@@ -212,15 +215,24 @@ class WebhookServer:
 
         try:
             if action == 'delete':
-                event_id = payload.get('google_event_id') or payload.get('googleEventId')
-                if not event_id:
-                    event_id = self.engine.google.find_event_id_by_private_property('ops_job_uid', str(job_uid))
+                event_ids = set()
+                passed_id = payload.get('google_event_id') or payload.get('googleEventId')
+                if passed_id:
+                    event_ids.add(str(passed_id))
+                found_ids = self.engine.google.find_all_event_ids_by_private_property('ops_job_uid', str(job_uid))
+                for fid in found_ids:
+                    event_ids.add(fid)
 
-                if not event_id:
-                    return jsonify({'status': 'not_found', 'job_uid': job_uid}), 404
+                if not event_ids:
+                    return jsonify({'status': 'not_found', 'job_uid': job_uid}), 200
 
-                self.engine.google.delete_event(str(event_id))
-                return jsonify({'status': 'deleted', 'job_uid': job_uid, 'google_event_id': event_id})
+                for eid in event_ids:
+                    try:
+                        self.engine.google.delete_event(eid)
+                    except Exception as del_err:
+                        print(f"  ⚠️ Could not delete event {eid}: {del_err}")
+
+                return jsonify({'status': 'deleted', 'job_uid': job_uid, 'deleted_ids': list(event_ids)})
 
             booking = self._build_booking_from_ops_payload(payload)
             if not booking.google_event_id:
@@ -232,6 +244,38 @@ class WebhookServer:
         except Exception as e:
             print(f"[OPS-CALENDAR] Error: {e}")
             return jsonify({'error': 'sync_failed', 'message': str(e)}), 500
+
+    def ops_external_events(self):
+        """Fetch external / guest Google Calendar events for the Operations portal."""
+        if not self._check_ops_api_key():
+            return jsonify({'error': 'unauthorized'}), 401
+
+        days_ahead = int(request.args.get('days_ahead', 45))
+        try:
+            events = self.engine.google.fetch_upcoming_external_events(days_ahead=days_ahead)
+            return jsonify({'status': 'ok', 'events': events})
+        except Exception as e:
+            print(f"[OPS-EXTERNAL-EVENTS] Error fetching external events: {e}")
+            return jsonify({'error': 'fetch_failed', 'message': str(e)}), 500
+
+    def ops_rsvp_event(self):
+        """RSVP response status (e.g. accepted) on Google Calendar."""
+        if not self._check_ops_api_key():
+            return jsonify({'error': 'unauthorized'}), 401
+
+        payload = request.json or {}
+        event_id = payload.get('google_event_id') or payload.get('eventId')
+        status = payload.get('response_status', 'accepted')
+
+        if not event_id:
+            return jsonify({'error': 'bad_request', 'message': 'Missing google_event_id'}), 400
+
+        try:
+            ok = self.engine.google.rsvp_event(str(event_id), response_status=status)
+            return jsonify({'status': 'ok' if ok else 'failed', 'google_event_id': event_id, 'response_status': status})
+        except Exception as e:
+            print(f"[OPS-RSVP-EVENT] Error RSVPing event: {e}")
+            return jsonify({'error': 'rsvp_failed', 'message': str(e)}), 500
 
     def catch_all(self, path):
         print(f"[WEBHOOK-DEBUG] Received request on unknown path: /{path}")

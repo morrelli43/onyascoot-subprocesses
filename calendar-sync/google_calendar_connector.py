@@ -298,7 +298,12 @@ class GoogleCalendarConnector:
         """Delete an event from Google Calendar."""
         if not self.service:
             self.authenticate()
-        self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        try:
+            self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        except Exception as e:
+            if '404' in str(e) or '410' in str(e) or 'notFound' in str(e) or 'deleted' in str(e):
+                return
+            raise
 
     def find_all_event_ids_by_private_property(
         self,
@@ -350,3 +355,159 @@ class GoogleCalendarConnector:
         """Find the first event ID whose private extended property matches the given key=value."""
         ids = self.find_all_event_ids_by_private_property(property_name, property_value, calendar_id)
         return ids[0] if ids else None
+
+    def fetch_upcoming_external_events(
+        self,
+        calendar_id: str = 'primary',
+        days_ahead: int = 45,
+        time_min: Optional[datetime] = None
+    ) -> List[dict]:
+        """Fetch upcoming non-job external/guest events from Google Calendar."""
+        if not self.service:
+            self.authenticate()
+
+        from zoneinfo import ZoneInfo
+        mel_tz = ZoneInfo("Australia/Melbourne")
+
+        if not time_min:
+            # Start from start of today in Melbourne
+            now_mel = datetime.now(mel_tz)
+            start_of_today = datetime(now_mel.year, now_mel.month, now_mel.day, 0, 0, 0, tzinfo=mel_tz)
+            time_min = start_of_today
+
+        time_max = time_min + timedelta(days=days_ahead)
+
+        raw_events = []
+        page_token = None
+
+        while True:
+            result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=time_min.isoformat(),
+                timeMax=time_max.isoformat(),
+                singleEvents=True,
+                orderBy='startTime',
+                pageToken=page_token
+            ).execute()
+
+            raw_events.extend(result.get('items', []))
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                break
+
+        external_events = []
+        for ev in raw_events:
+            if ev.get('status') == 'cancelled':
+                continue
+
+            props = ev.get('extendedProperties', {}).get('private', {})
+            # Exclude jobs and square bookings managed by OnyaScoot
+            if props.get('job_uid') or props.get('square_booking_id') or props.get('managed_by') == 'onyascoot_ops':
+                continue
+
+            # Determine responseStatus for onyascoot@gmail.com
+            attendees = ev.get('attendees', [])
+            response_status = 'needsAction'
+            for att in attendees:
+                if att.get('self') or att.get('email', '').lower() == 'onyascoot@gmail.com':
+                    response_status = att.get('responseStatus', 'needsAction')
+                    break
+
+            start_raw = ev.get('start', {})
+            end_raw = ev.get('end', {})
+
+            is_all_day = 'date' in start_raw and 'dateTime' not in start_raw
+
+            if is_all_day:
+                start_date_str = start_raw.get('date')
+                end_date_str = end_raw.get('date')
+                # Google all-day end date is exclusive. If single day, end is start + 1 day.
+                # Adjust end_date_str to be inclusive for standard operations logic
+                try:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d') - timedelta(days=1)
+                    end_date_str = end_dt.strftime('%Y-%m-%d')
+                except Exception:
+                    end_date_str = start_date_str
+
+                external_events.append({
+                    'google_event_id': ev.get('id'),
+                    'title': ev.get('summary') or 'Personal Event',
+                    'description': ev.get('description') or '',
+                    'location': ev.get('location') or '',
+                    'is_all_day': True,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str,
+                    'start_time': None,
+                    'end_time': None,
+                    'start_minute': 0,
+                    'end_minute': 1440,
+                    'response_status': response_status,
+                })
+            else:
+                # Timed event
+                start_dt_str = start_raw.get('dateTime')
+                end_dt_str = end_raw.get('dateTime')
+                if not start_dt_str or not end_dt_str:
+                    continue
+
+                try:
+                    start_dt = datetime.fromisoformat(start_dt_str.replace('Z', '+00:00')).astimezone(mel_tz)
+                    end_dt = datetime.fromisoformat(end_dt_str.replace('Z', '+00:00')).astimezone(mel_tz)
+                except Exception:
+                    continue
+
+                start_date_str = start_dt.strftime('%Y-%m-%d')
+                end_date_str = end_dt.strftime('%Y-%m-%d')
+                start_time_str = start_dt.strftime('%H:%M')
+                end_time_str = end_dt.strftime('%H:%M')
+                start_min = start_dt.hour * 60 + start_dt.minute
+                end_min = end_dt.hour * 60 + end_dt.minute
+
+                external_events.append({
+                    'google_event_id': ev.get('id'),
+                    'title': ev.get('summary') or 'Personal Event',
+                    'description': ev.get('description') or '',
+                    'location': ev.get('location') or '',
+                    'is_all_day': False,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str,
+                    'start_time': start_time_str,
+                    'end_time': end_time_str,
+                    'start_minute': start_min,
+                    'end_minute': end_min,
+                    'response_status': response_status,
+                })
+
+        return external_events
+
+    def rsvp_event(
+        self,
+        event_id: str,
+        response_status: str = 'accepted',
+        calendar_id: str = 'primary'
+    ) -> bool:
+        """Update RSVP response status (e.g. 'accepted') on Google Calendar for onyascoot."""
+        if not self.service:
+            self.authenticate()
+
+        try:
+            event = self.service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            attendees = event.get('attendees', [])
+            updated = False
+            for att in attendees:
+                if att.get('self') or att.get('email', '').lower() == 'onyascoot@gmail.com':
+                    att['responseStatus'] = response_status
+                    updated = True
+            if not updated:
+                attendees.append({'email': 'onyascoot@gmail.com', 'responseStatus': response_status})
+
+            self.service.events().patch(
+                calendarId=calendar_id,
+                eventId=event_id,
+                body={'attendees': attendees}
+            ).execute()
+            return True
+        except Exception as e:
+            print(f"[GoogleCalendarConnector] Failed to RSVP event {event_id}: {e}")
+            return False
+
