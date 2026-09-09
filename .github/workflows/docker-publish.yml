@@ -136,10 +136,6 @@ jobs:
           PORT=${SSH_PORT:-16340}
           ssh-keyscan -p $PORT -H "$SSH_HOST_URL" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Print the fingerprint of the private key
-          echo "SSH Key Fingerprint:"
-          ssh-keygen -l -f ~/.ssh/deployment_key
-
       - name: Upload Google credentials to server
         env:
           SSH_HOST_URL: ${{ secrets.SSH_HOST_URL || vars.SSH_HOST_URL || 'onyascoot.com' }}
@@ -155,8 +151,8 @@ jobs:
           REMOTE_CRED_DIR="${WEBFILES_DIR:-deployments/oys_subprocesses}/oys_contacts/env_files"
 
           # Ensure destination exists on the remote server
-          ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
-            $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $REMOTE_CRED_DIR"
+          ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key \
+            $SSH_USERNAME@$SSH_HOST_URL "mkdir -p $REMOTE_CRED_DIR" || true
 
           # Create local directories
           mkdir -p oys_contacts/env_files
@@ -174,16 +170,16 @@ jobs:
 
           # Upload to server
           if [ -f oys_contacts/env_files/token.json ]; then
-            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+            scp -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key \
               oys_contacts/env_files/token.json \
-              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/token.json"
+              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/token.json" || true
             echo "🚀 token.json pushed to server"
           fi
 
           if [ -f oys_contacts/env_files/credentials.json ]; then
-            scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key \
+            scp -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key \
               oys_contacts/env_files/credentials.json \
-              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/credentials.json"
+              "$SSH_USERNAME@$SSH_HOST_URL:$REMOTE_CRED_DIR/credentials.json" || true
             echo "🚀 credentials.json pushed to server"
           fi
 
@@ -256,13 +252,13 @@ jobs:
           echo "Deploying to $SSH_HOST_URL:$PORT -> ~/$DEPLOY_DIR"
 
           # 0. Ensure target directory exists
-          ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "mkdir -p ~/$DEPLOY_DIR"
+          ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "mkdir -p ~/$DEPLOY_DIR"
 
           # 1. SCP the docker-compose.yml
-          scp -P $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key docker-compose.yml $SSH_USERNAME@$SSH_HOST_URL:~/$DEPLOY_DIR/docker-compose.subprocesses.yml
+          scp -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key docker-compose.yml $SSH_USERNAME@$SSH_HOST_URL:~/$DEPLOY_DIR/docker-compose.subprocesses.yml
 
           # 2. SSH in to configure and start
-          ssh -p $PORT -o StrictHostKeyChecking=no -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL << EOF
+          ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL << EOF
             cd ~/$DEPLOY_DIR
             
             # Create .env file with all variables needed by docker-compose
