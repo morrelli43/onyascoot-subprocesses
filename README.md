@@ -30,6 +30,12 @@ graph TD
 | **Email Service** | `4311` | Pure SMTP service for sending alerts and confirmations. |
 | **Nodeifier** | `4312` | Centralized alerting service for pushing notifications to webhooks. |
 | **Ops Forwarder** | `4313` | Forwards form submissions to the OYS Operations site. |
+| **Don't Know Escooter** | `4314` | Handles unlisted scooter queries and photo uploads. |
+| **Google Maps API** | `4315` | Routes matrix/time queries to local OSRM first (< 5ms, \$0), with Google Routes v2 fallback. |
+| **Process Monitor** | `4316` | Container health, memory, and status telemetry. |
+| **SMS Gateway** | `4330` | Android SMS gateway interface for outbound and inbound SMS. |
+| **OSRM Engine** | `5000` | High-performance Open Source Routing Machine serving Victorian road network. |
+| **Calendar Sync** | `5001` | Google Calendar appointment sync service. |
 
 ---
 

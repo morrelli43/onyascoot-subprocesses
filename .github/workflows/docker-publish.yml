@@ -233,6 +233,8 @@ jobs:
           GOOGLEMAPSAPI_PORT: ${{ vars.GOOGLEMAPSAPI_PORT }}
           GOOGLE_MAPS_API_KEY_VAL: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           GOOGLEMAPSAPI_SERVICE_API_KEY_VAL: ${{ secrets.GOOGLEMAPSAPI_SERVICE_API_KEY }}
+          OSRM_PORT: ${{ vars.OSRM_PORT }}
+          OSRM_URL: ${{ vars.OSRM_URL }}
 
         run: |
           # Define environment-specific variables
@@ -251,11 +253,12 @@ jobs:
           PORT=${SSH_PORT:-16340}
           echo "Deploying to $SSH_HOST_URL:$PORT -> ~/$DEPLOY_DIR"
 
-          # 0. Ensure target directory exists
-          ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "mkdir -p ~/$DEPLOY_DIR"
+          # 0. Ensure target directory and osrm directory exist
+          ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL "mkdir -p ~/$DEPLOY_DIR ~/$DEPLOY_DIR/osrm ~/$DEPLOY_DIR/osrm-data"
 
-          # 1. SCP the docker-compose.yml
+          # 1. SCP the docker-compose.yml and osrm setup script
           scp -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key docker-compose.yml $SSH_USERNAME@$SSH_HOST_URL:~/$DEPLOY_DIR/docker-compose.subprocesses.yml
+          scp -P $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key osrm/setup-osrm.sh $SSH_USERNAME@$SSH_HOST_URL:~/$DEPLOY_DIR/osrm/setup-osrm.sh || true
 
           # 2. SSH in to configure and start
           ssh -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deployment_key $SSH_USERNAME@$SSH_HOST_URL << EOF
@@ -305,6 +308,8 @@ jobs:
             echo "GOOGLEMAPSAPI_PORT=$GOOGLEMAPSAPI_PORT" >> .env.subprocesses
             echo "GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY_VAL" >> .env.subprocesses
             echo "GOOGLEMAPSAPI_SERVICE_API_KEY=$GOOGLEMAPSAPI_SERVICE_API_KEY_VAL" >> .env.subprocesses
+            echo "OSRM_PORT=${OSRM_PORT:-5000}" >> .env.subprocesses
+            echo "OSRM_URL=${OSRM_URL:-http://osrm:5000}" >> .env.subprocesses
 
             # Pre-create the bridge network so other stacks can share it as 'external'
             echo "Ensuring frontend bridge network exists..."

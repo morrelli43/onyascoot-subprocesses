@@ -59,3 +59,9 @@ env_files/
 # Node (email-service)
 node_modules/
 email-service.zip
+
+# OSRM data extracts
+osrm-data/
+*.osrm*
+*.osm.pbf
+
