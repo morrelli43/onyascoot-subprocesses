@@ -153,16 +153,6 @@ services:
     ports:
       - "${SMS_GATEWAY_PORT:-4330}:4330"
 
-
-
-  osrm:
-    build: ./osrm
-    container_name: osrm
-    image: ghcr.io/morrelli43/onyascoot-subprocesses_osrm:${IMAGE_TAG:-main}
-    restart: unless-stopped
-    ports:
-      - "${OSRM_PORT:-5000}:5000"
-
   googlemapsapi:
     build: ./googlemapsapi
     container_name: googlemapsapi
