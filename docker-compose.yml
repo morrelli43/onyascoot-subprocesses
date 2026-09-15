@@ -156,14 +156,12 @@ services:
 
 
   osrm:
-    image: osrm/osrm-backend:latest
+    build: ./osrm
     container_name: osrm
+    image: ghcr.io/morrelli43/onyascoot-subprocesses_osrm:${IMAGE_TAG:-main}
     restart: unless-stopped
     ports:
       - "${OSRM_PORT:-5000}:5000"
-    volumes:
-      - ${DOCKER_FOLDER_WEBFILES:-.}/osrm-data:/data
-    command: osrm-routed --algorithm mld /data/victoria-latest.osrm
 
   googlemapsapi:
     build: ./googlemapsapi
