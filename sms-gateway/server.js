@@ -77,6 +77,18 @@ server.on('upgrade', (request, socket, head) => {
     ws.deviceId = deviceId;
     ws.deviceName = deviceName ? decodeURIComponent(deviceName) : null;
     ws.isAlive = true;
+
+    // Terminate any existing connection for this device ID to prevent ghost sockets
+    const existingWs = devices.get(deviceId);
+    if (existingWs && existingWs !== ws) {
+      console.log(`🔄 Superseding previous connection for ${deviceId}`);
+      try {
+        existingWs.terminate();
+      } catch (e) {
+        // ignore
+      }
+    }
+
     devices.set(deviceId, ws);
     console.log(`✅ Device connected: ${deviceId} ${ws.deviceName ? `("${ws.deviceName}")` : ''}`);
 
@@ -224,8 +236,12 @@ server.on('upgrade', (request, socket, head) => {
     });
 
     ws.on('close', () => {
-      devices.delete(deviceId);
-      console.log(`❌ Device disconnected: ${deviceId}`);
+      if (devices.get(deviceId) === ws) {
+        devices.delete(deviceId);
+        console.log(`❌ Device disconnected: ${deviceId}`);
+      } else {
+        console.log(`ℹ️ Stale connection closed for ${deviceId} (superseded by newer connection)`);
+      }
     });
   });
 });
@@ -518,7 +534,9 @@ const interval = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
       console.log(`⚠️ Terminating inactive connection: ${ws.deviceId}`);
-      devices.delete(ws.deviceId);
+      if (devices.get(ws.deviceId) === ws) {
+        devices.delete(ws.deviceId);
+      }
       return ws.terminate();
     }
     ws.isAlive = false;
