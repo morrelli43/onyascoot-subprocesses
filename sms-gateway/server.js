@@ -43,12 +43,15 @@ server.on('upgrade', (request, socket, head) => {
   const authHeader = request.headers['authorization'];
   const headerApiKey = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
   const headerDeviceId = request.headers['x-device-id'];
+  const headerDeviceName = request.headers['x-device-name'];
 
   const queryApiKey = urlParams.get('apiKey');
   const queryDeviceId = urlParams.get('deviceId');
+  const queryDeviceName = urlParams.get('deviceName');
 
   const apiKey = queryApiKey || headerApiKey;
   const deviceId = queryDeviceId || headerDeviceId;
+  const deviceName = queryDeviceName || headerDeviceName;
 
   console.log(`📡 WS Upgrade: ${request.url}`);
   console.log(`   - Extracted API Key (first 4): ${apiKey ? apiKey.substring(0, 4) + '...' : 'MISSING'}`);
@@ -72,9 +75,26 @@ server.on('upgrade', (request, socket, head) => {
 
   wss.handleUpgrade(request, socket, head, (ws) => {
     ws.deviceId = deviceId;
+    ws.deviceName = deviceName ? decodeURIComponent(deviceName) : null;
     ws.isAlive = true;
     devices.set(deviceId, ws);
-    console.log(`✅ Device connected: ${deviceId}`);
+    console.log(`✅ Device connected: ${deviceId} ${ws.deviceName ? `("${ws.deviceName}")` : ''}`);
+
+    // If deviceName was supplied in headers, automatically notify Operations webhook
+    if (ws.deviceName) {
+      const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
+      const regPayload = {
+        event: 'device_registration',
+        device_id: deviceId,
+        device_name: ws.deviceName,
+        timestamp: new Date().toISOString()
+      };
+      const headers = { 'Content-Type': 'application/json' };
+      if (OPS_API_KEY) headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
+      axios.post(targetUrl, regPayload, { headers, timeout: 5000 }).catch(e => {
+        console.warn(`⚠️ Failed to forward initial device_registration to ${targetUrl}: ${e.message}`);
+      });
+    }
 
     // Discover phone's HTTP API URL from headers the Android app sends on connect
     const headerLocalIp   = request.headers['x-local-ip'];
@@ -97,6 +117,29 @@ server.on('upgrade', (request, socket, head) => {
       try {
         const data = JSON.parse(message);
         console.log(`📩 Message from device ${deviceId}:`, data);
+
+        // Handle device registration / friendly name updates from handset
+        if (data.action === 'device_register') {
+          const devName = data.deviceName || data.device_name;
+          if (devName) ws.deviceName = devName;
+          console.log(`📱 Device registration received: ${deviceId} -> "${ws.deviceName || 'unnamed'}"`);
+          const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
+          try {
+            const regPayload = {
+              event: 'device_registration',
+              device_id: deviceId,
+              device_name: ws.deviceName,
+              timestamp: new Date().toISOString()
+            };
+            const headers = { 'Content-Type': 'application/json' };
+            if (OPS_API_KEY) headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
+            await axios.post(targetUrl, regPayload, { headers, timeout: 5000 });
+            console.log(`🚀 Forwarded device registration to Operations for ${deviceId} (${ws.deviceName})`);
+          } catch (e) {
+            console.error(`❌ Error forwarding device_registration: ${e.message}`);
+          }
+          return;
+        }
 
         // --- DATABASE STORAGE ---
         const messageId = data.id || `msg-${uuidv4().slice(0, 8)}`;
@@ -151,6 +194,8 @@ server.on('upgrade', (request, socket, head) => {
             direction: 'inbound',
             message_uid: messageId,
             threadId: threadId,
+            deviceId: deviceId,
+            deviceName: ws.deviceName || null,
             mediaUrl: mediaPath ? `/media/${mediaPath}` : null,
             ...data
           };
