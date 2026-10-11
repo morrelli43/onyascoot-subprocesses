@@ -41,6 +41,18 @@ async function generateBarcode(codeText) {
 }
 
 /**
+ * Generate a QR code buffer for mobile quick-stock scanning
+ */
+async function generateQrCode(url) {
+  return bwipjs.toBuffer({
+    bcid: "qrcode",
+    text: String(url).trim(),
+    scale: 3,
+    padding: 0,
+  });
+}
+
+/**
  * Render Modern Open Template (Locked-in Production Choice)
  * Title left, Logo top-right, Price left, SKU right under logo, Barcode bottom
  */
@@ -94,12 +106,20 @@ function renderModernOpenPage(doc, item, heightPt) {
       });
   }
 
-  // 4. Barcode
+  // 4. Barcode (Left) & QR Code (Right for Mobile Stock Management)
+  const qrSize = 21; // ~7.4mm square crisp 300 DPI QR code
+  const qrX = WIDTH_PT - rightMargin - qrSize + 2;
+  const qrY = heightPt - qrSize - 5;
+
+  if (item._qrPng) {
+    doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+  }
+
   if (item._barcodePng) {
+    const barcodeX = leftMargin;
+    const barcodeWidth = qrX - barcodeX - 6;
     const barcodeHeight = 18;
-    const barcodeY = heightPt - barcodeHeight - 7;
-    const barcodeX = 12;
-    const barcodeWidth = WIDTH_PT - 24;
+    const barcodeY = heightPt - barcodeHeight - 6.5;
     doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
   }
 }
@@ -167,12 +187,20 @@ function renderClassicHairlinePage(doc, item, heightPt) {
       });
   }
 
-  // 5. Barcode
+  // 5. Barcode (Left) & QR Code (Right for Mobile Stock Management)
+  const qrSize = 21; // ~7.4mm square
+  const qrX = WIDTH_PT - rightMargin - qrSize + 2;
+  const qrY = heightPt - qrSize - 5;
+
+  if (item._qrPng) {
+    doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+  }
+
   if (item._barcodePng) {
+    const barcodeX = leftMargin;
+    const barcodeWidth = qrX - barcodeX - 6;
     const barcodeHeight = 18;
-    const barcodeY = heightPt - barcodeHeight - 7;
-    const barcodeX = 12;
-    const barcodeWidth = WIDTH_PT - 24;
+    const barcodeY = heightPt - barcodeHeight - 6.5;
     doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
   }
 }
@@ -185,12 +213,17 @@ async function generateLabelsPdf(items, options = {}) {
   const heightPt = heightMm * MM_TO_PT;
   const template = options.template || "modern_open";
 
-  // Pre-generate unique barcodes
+  // Pre-generate unique barcodes and QR codes
   const barcodeCache = new Map();
+  const qrCache = new Map();
   for (const item of items) {
     const code = item.barcode || item.sku || "00000000";
     if (!barcodeCache.has(code)) {
       barcodeCache.set(code, await generateBarcode(code));
+    }
+    const qrUrl = item.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(item.sku || code)}`;
+    if (!qrCache.has(qrUrl)) {
+      qrCache.set(qrUrl, await generateQrCode(qrUrl));
     }
   }
 
@@ -198,9 +231,12 @@ async function generateLabelsPdf(items, options = {}) {
   const flatLabels = [];
   for (const it of items) {
     const qty = Math.max(1, parseInt(it.quantity || 1, 10));
-    const barcodePng = barcodeCache.get(it.barcode || it.sku || "00000000");
+    const code = it.barcode || it.sku || "00000000";
+    const qrUrl = it.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(it.sku || code)}`;
+    const barcodePng = barcodeCache.get(code);
+    const qrPng = qrCache.get(qrUrl);
     for (let i = 0; i < qty; i++) {
-      flatLabels.push({ ...it, _barcodePng: barcodePng });
+      flatLabels.push({ ...it, _barcodePng: barcodePng, _qrPng: qrPng });
     }
   }
 
