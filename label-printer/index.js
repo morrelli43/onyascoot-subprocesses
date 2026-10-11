@@ -71,13 +71,28 @@ function renderModernOpenPage(doc, item, heightPt) {
     doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
   }
 
-  // 2. Left Column: Product Title
+  // 2. Left Column: Category Breadcrumbs & Product Title
   const leftColX = leftMargin;
   const leftColWidth = logoX - leftColX - 6; // ~101.75 pt
 
+  const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
+  let titleY = topY;
+
+  if (breadcrumbText) {
+    // Very small category breadcrumb above product name (e.g. "Wheels > Bearings")
+    doc.fontSize(4.6).font("Helvetica-Bold").fillColor("#000000")
+      .text(breadcrumbText, leftColX, topY - 1, {
+        width: leftColWidth,
+        align: "left",
+        ellipsis: true
+      });
+    titleY = topY + 5.5;
+  }
+
   const titleText = (item.title || "ITEM NAME").toUpperCase();
-  doc.fontSize(8.1).font("Helvetica-Bold").fillColor("#000000")
-    .text(titleText, leftColX, topY, {
+  const titleFontSize = breadcrumbText ? 7.6 : 8.1;
+  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
+    .text(titleText, leftColX, titleY, {
       width: leftColWidth,
       align: "left",
       lineGap: -0.2
@@ -155,10 +170,24 @@ function renderClassicHairlinePage(doc, item, heightPt) {
     doc.image(LOGO_PATH, leftMargin, logoY, { width: logoWidth, height: logoHeight });
   }
 
-  // 3. Title Right Column
+  // 3. Title Right Column & Category Breadcrumbs
+  const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
+  let titleY = 10;
+
+  if (breadcrumbText) {
+    doc.fontSize(4.6).font("Helvetica-Bold").fillColor("#000000")
+      .text(breadcrumbText, rightColX, 9, {
+        width: rightColWidth,
+        align: "left",
+        ellipsis: true
+      });
+    titleY = 14.5;
+  }
+
   const titleText = (item.title || "ITEM NAME").toUpperCase();
-  doc.fontSize(8.1).font("Helvetica-Bold").fillColor("#000000")
-    .text(titleText, rightColX, 10, {
+  const titleFontSize = breadcrumbText ? 7.6 : 8.1;
+  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
+    .text(titleText, rightColX, titleY, {
       width: rightColWidth,
       align: "left",
       lineGap: -0.2
