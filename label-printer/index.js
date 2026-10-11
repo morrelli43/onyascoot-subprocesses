@@ -48,7 +48,7 @@ async function generateQrCode(url) {
     bcid: "qrcode",
     text: String(url).trim(),
     scale: 3,
-    padding: 0,
+    padding: 1,
   });
 }
 
@@ -80,7 +80,7 @@ function renderModernOpenPage(doc, item, heightPt) {
 
   if (breadcrumbText) {
     // Very small category breadcrumb above product name (e.g. "Wheels > Bearings")
-    doc.fontSize(4.6).font("Helvetica-Bold").fillColor("#000000")
+    doc.fontSize(4.8).font("Helvetica").fillColor("#000000")
       .text(breadcrumbText, leftColX, topY - 1, {
         width: leftColWidth,
         align: "left",
@@ -122,9 +122,10 @@ function renderModernOpenPage(doc, item, heightPt) {
   }
 
   // 4. Barcode (Left) & QR Code (Right for Mobile Stock Management)
-  const qrSize = 21; // ~7.4mm square crisp 300 DPI QR code
-  const qrX = WIDTH_PT - rightMargin - qrSize + 2;
-  const qrY = heightPt - qrSize - 5;
+  const qrSize = 19.5; // ~6.9mm square crisp 300 DPI QR code
+  const bottomMargin = 8.5; // ~3.0mm safety margin to prevent bottom thermal cut clipping
+  const qrX = WIDTH_PT - rightMargin - qrSize + 1;
+  const qrY = heightPt - qrSize - bottomMargin;
 
   if (item._qrPng) {
     doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
@@ -133,8 +134,8 @@ function renderModernOpenPage(doc, item, heightPt) {
   if (item._barcodePng) {
     const barcodeX = leftMargin;
     const barcodeWidth = qrX - barcodeX - 6;
-    const barcodeHeight = 18;
-    const barcodeY = heightPt - barcodeHeight - 6.5;
+    const barcodeHeight = 16.5;
+    const barcodeY = heightPt - barcodeHeight - bottomMargin;
     doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
   }
 }
@@ -175,7 +176,7 @@ function renderClassicHairlinePage(doc, item, heightPt) {
   let titleY = 10;
 
   if (breadcrumbText) {
-    doc.fontSize(4.6).font("Helvetica-Bold").fillColor("#000000")
+    doc.fontSize(4.8).font("Helvetica").fillColor("#000000")
       .text(breadcrumbText, rightColX, 9, {
         width: rightColWidth,
         align: "left",
@@ -217,9 +218,10 @@ function renderClassicHairlinePage(doc, item, heightPt) {
   }
 
   // 5. Barcode (Left) & QR Code (Right for Mobile Stock Management)
-  const qrSize = 21; // ~7.4mm square
-  const qrX = WIDTH_PT - rightMargin - qrSize + 2;
-  const qrY = heightPt - qrSize - 5;
+  const qrSize = 19.5; // ~6.9mm square
+  const bottomMargin = 8.5; // ~3.0mm safety margin to prevent bottom thermal cut clipping
+  const qrX = WIDTH_PT - rightMargin - qrSize + 1;
+  const qrY = heightPt - qrSize - bottomMargin;
 
   if (item._qrPng) {
     doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
@@ -228,8 +230,8 @@ function renderClassicHairlinePage(doc, item, heightPt) {
   if (item._barcodePng) {
     const barcodeX = leftMargin;
     const barcodeWidth = qrX - barcodeX - 6;
-    const barcodeHeight = 18;
-    const barcodeY = heightPt - barcodeHeight - 6.5;
+    const barcodeHeight = 16.5;
+    const barcodeY = heightPt - barcodeHeight - bottomMargin;
     doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
   }
 }
