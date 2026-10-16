@@ -57,6 +57,9 @@ async function generateQrCode(url) {
  */
 function resolveTemplate(templateInput) {
   const norm = String(templateInput || "stock - small").trim().toLowerCase();
+  if (norm === "job label" || norm === "job_label" || norm === "job - label") {
+    return { id: "Job Label", heightMm: 100 };
+  }
   if (norm === "stock - medium" || norm === "stock_medium" || norm === "medium") {
     return { id: "stock - medium", heightMm: 54 };
   }
@@ -336,24 +339,176 @@ function renderStockLargePage(doc, item, heightPt) {
 }
 
 /**
+ * Render Job Label Template (62x100mm Customer & Workshop Job Tag)
+ * Includes:
+ * - Job Number & Date Started (top-left)
+ * - Bigger QR Code to Job Panel (top-right)
+ * - eScooter Make & Model
+ * - Customer Name & Customer Address
+ * - Customer Phone Number + Small QR Code to start Phone Dialler (tel:)
+ * - OnyaScoot Company Logo (bottom)
+ */
+function renderJobLabelPage(doc, item, heightPt) {
+  const leftMargin = 12;
+  const rightMargin = 14;
+  const fullWidth = WIDTH_PT - leftMargin - rightMargin; // ~149.75 pt
+
+  // 1. Top-Right: Bigger QR Code to the Job Panel
+  const jobQrSize = 56; // ~19.8mm square
+  const jobQrX = WIDTH_PT - rightMargin - jobQrSize; // ~105.75 pt
+  const jobQrY = 14;
+
+  if (item._jobQrPng || item._qrPng) {
+    doc.image(item._jobQrPng || item._qrPng, jobQrX, jobQrY, {
+      width: jobQrSize,
+      height: jobQrSize,
+    });
+    doc.fontSize(5.2).font("Helvetica-Bold").fillColor("#000000")
+      .text("JOB PANEL", jobQrX, jobQrY + jobQrSize + 2.5, {
+        width: jobQrSize,
+        align: "center",
+      });
+  }
+
+  // 2. Top-Left: Job Number & Date Started
+  const leftColWidth = jobQrX - leftMargin - 8; // ~85.75 pt
+  const jobNumberText = String(item.jobNumber || item.sku || item.uid || "JOB-0000").trim();
+  const dateStartedText = String(item.dateStarted || "Unknown Date").trim();
+
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("JOB NUMBER", leftMargin, 14, { width: leftColWidth, align: "left" });
+
+  doc.fontSize(10.5).font("Helvetica-Bold").fillColor("#000000")
+    .text(jobNumberText, leftMargin, 21.5, {
+      width: leftColWidth,
+      align: "left",
+      ellipsis: true,
+    });
+
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("DATE STARTED", leftMargin, 43, { width: leftColWidth, align: "left" });
+
+  doc.fontSize(8.8).font("Helvetica-Bold").fillColor("#000000")
+    .text(dateStartedText, leftMargin, 50.5, {
+      width: leftColWidth,
+      align: "left",
+      ellipsis: true,
+    });
+
+  // 3. eScooter Make & Model
+  const scooterText = String(item.scooterName || item.breadcrumb || "UNLISTED ESCOOTER").trim().toUpperCase();
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("ESCOOTER", leftMargin, 83, { width: fullWidth, align: "left" });
+
+  doc.fontSize(9.5).font("Helvetica-Bold").fillColor("#000000")
+    .text(scooterText, leftMargin, 90.5, {
+      width: fullWidth,
+      height: 24,
+      align: "left",
+      ellipsis: true,
+    });
+
+  // 4. Customer Name & Address
+  const customerNameText = String(item.customerName || item.title || "CUSTOMER").trim().toUpperCase();
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("CUSTOMER", leftMargin, 118, { width: fullWidth, align: "left" });
+
+  doc.fontSize(11.5).font("Helvetica-Bold").fillColor("#000000")
+    .text(customerNameText, leftMargin, 125.5, {
+      width: fullWidth,
+      height: 27,
+      align: "left",
+      ellipsis: true,
+    });
+
+  const customerAddressText = String(item.customerAddress || "No address on file").trim();
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("ADDRESS", leftMargin, 155, { width: fullWidth, align: "left" });
+
+  doc.fontSize(8.2).font("Helvetica").fillColor("#000000")
+    .text(customerAddressText, leftMargin, 162.5, {
+      width: fullWidth,
+      height: 22,
+      align: "left",
+      ellipsis: true,
+    });
+
+  // 5. Customer Phone Number (left) + Small Phone Dialler QR Code (right)
+  const telQrSize = 32; // ~11.3mm square (smaller QR code for phone dialler)
+  const telQrX = WIDTH_PT - rightMargin - telQrSize; // ~129.75 pt
+  const telQrY = 189;
+  const phoneColWidth = telQrX - leftMargin - 8;
+
+  const phoneText = String(item.customerPhone || "No phone listed").trim();
+  doc.fontSize(5.8).font("Helvetica").fillColor("#000000")
+    .text("PHONE NUMBER", leftMargin, 194, { width: phoneColWidth, align: "left" });
+
+  doc.fontSize(11.0).font("Helvetica-Bold").fillColor("#000000")
+    .text(phoneText, leftMargin, 202.5, {
+      width: phoneColWidth,
+      align: "left",
+      ellipsis: true,
+    });
+
+  if (item._telQrPng) {
+    doc.image(item._telQrPng, telQrX, telQrY, {
+      width: telQrSize,
+      height: telQrSize,
+    });
+    doc.fontSize(5.0).font("Helvetica-Bold").fillColor("#000000")
+      .text("SCAN TO CALL", telQrX - 6, telQrY + telQrSize + 2, {
+        width: telQrSize + 12,
+        align: "center",
+      });
+  }
+
+  // 6. Bottom Footer: Company Logo (bottom-right, matching stock label placement)
+  const bottomMargin = 14;
+  const logoHeight = 29;
+  const logoWidth = logoHeight * (2000 / 906); // ~64.02 pt
+  const logoX = WIDTH_PT - rightMargin - logoWidth;
+  const logoY = heightPt - logoHeight - bottomMargin;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  }
+}
+
+/**
  * Generate a multi-page PDF buffer containing batch labels
  */
 async function generateLabelsPdf(items, options = {}) {
   const resolved = resolveTemplate(options.template);
   const heightMm = options.labelHeightMm || resolved.heightMm;
   const heightPt = heightMm * MM_TO_PT;
+  const isJobLabel = resolved.id === "Job Label";
 
   // Pre-generate unique barcodes and QR codes
   const barcodeCache = new Map();
   const qrCache = new Map();
   for (const item of items) {
-    const code = item.barcode || item.sku || "00000000";
-    if (!barcodeCache.has(code)) {
-      barcodeCache.set(code, await generateBarcode(code));
-    }
-    const qrUrl = item.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(item.sku || code)}`;
-    if (!qrCache.has(qrUrl)) {
-      qrCache.set(qrUrl, await generateQrCode(qrUrl));
+    if (isJobLabel) {
+      const jobNum = item.jobNumber || item.sku || item.uid || "JOB-0000";
+      const jobUrl = item.jobUrl || item.qrUrl || `https://portal.onyascoot.com/dashboard/jobs/active?job=${encodeURIComponent(jobNum)}`;
+      if (!qrCache.has(jobUrl)) {
+        qrCache.set(jobUrl, await generateQrCode(jobUrl));
+      }
+      const rawPhone = String(item.customerPhone || "").replace(/[^+\d]/g, "");
+      if (rawPhone) {
+        const telUrl = `tel:${rawPhone}`;
+        if (!qrCache.has(telUrl)) {
+          qrCache.set(telUrl, await generateQrCode(telUrl));
+        }
+      }
+    } else {
+      const code = item.barcode || item.sku || "00000000";
+      if (!barcodeCache.has(code)) {
+        barcodeCache.set(code, await generateBarcode(code));
+      }
+      const qrUrl = item.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(item.sku || code)}`;
+      if (!qrCache.has(qrUrl)) {
+        qrCache.set(qrUrl, await generateQrCode(qrUrl));
+      }
     }
   }
 
@@ -361,12 +516,24 @@ async function generateLabelsPdf(items, options = {}) {
   const flatLabels = [];
   for (const it of items) {
     const qty = Math.max(1, parseInt(it.quantity || 1, 10));
-    const code = it.barcode || it.sku || "00000000";
-    const qrUrl = it.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(it.sku || code)}`;
-    const barcodePng = barcodeCache.get(code);
-    const qrPng = qrCache.get(qrUrl);
-    for (let i = 0; i < qty; i++) {
-      flatLabels.push({ ...it, _barcodePng: barcodePng, _qrPng: qrPng });
+    if (isJobLabel) {
+      const jobNum = it.jobNumber || it.sku || it.uid || "JOB-0000";
+      const jobUrl = it.jobUrl || it.qrUrl || `https://portal.onyascoot.com/dashboard/jobs/active?job=${encodeURIComponent(jobNum)}`;
+      const rawPhone = String(it.customerPhone || "").replace(/[^+\d]/g, "");
+      const telUrl = rawPhone ? `tel:${rawPhone}` : null;
+      const jobQrPng = qrCache.get(jobUrl);
+      const telQrPng = telUrl ? qrCache.get(telUrl) : null;
+      for (let i = 0; i < qty; i++) {
+        flatLabels.push({ ...it, _jobQrPng: jobQrPng, _telQrPng: telQrPng });
+      }
+    } else {
+      const code = it.barcode || it.sku || "00000000";
+      const qrUrl = it.qrUrl || `https://portal.onyascoot.com/m/stock/${encodeURIComponent(it.sku || code)}`;
+      const barcodePng = barcodeCache.get(code);
+      const qrPng = qrCache.get(qrUrl);
+      for (let i = 0; i < qty; i++) {
+        flatLabels.push({ ...it, _barcodePng: barcodePng, _qrPng: qrPng });
+      }
     }
   }
 
@@ -390,7 +557,9 @@ async function generateLabelsPdf(items, options = {}) {
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       });
 
-      if (resolved.id === "stock - medium") {
+      if (resolved.id === "Job Label") {
+        renderJobLabelPage(doc, label, heightPt);
+      } else if (resolved.id === "stock - medium") {
         renderStockMediumPage(doc, label, heightPt);
       } else if (resolved.id === "stock - large") {
         renderStockLargePage(doc, label, heightPt);
@@ -565,5 +734,6 @@ module.exports = {
   renderStockSmallPage,
   renderStockMediumPage,
   renderStockLargePage,
+  renderJobLabelPage,
   resolveTemplate,
 };
