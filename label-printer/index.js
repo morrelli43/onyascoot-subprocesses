@@ -47,33 +47,48 @@ async function generateQrCode(url) {
   return bwipjs.toBuffer({
     bcid: "qrcode",
     text: String(url).trim(),
-    scale: 3,
-    padding: 1,
+    scale: 4,
+    padding: 0,
   });
 }
 
 /**
- * Render Modern Open Template (Locked-in Production Choice)
- * Title left, Logo top-right, Price left, SKU right under logo, Barcode bottom
+ * Resolve template identifier and default label height in mm
  */
-function renderModernOpenPage(doc, item, heightPt) {
+function resolveTemplate(templateInput) {
+  const norm = String(templateInput || "stock - small").trim().toLowerCase();
+  if (norm === "stock - medium" || norm === "stock_medium" || norm === "medium") {
+    return { id: "stock - medium", heightMm: 54 };
+  }
+  if (norm === "stock - large" || norm === "stock_large" || norm === "large") {
+    return { id: "stock - large", heightMm: 100 };
+  }
+  return { id: "stock - small", heightMm: DEFAULT_LABEL_HEIGHT_MM };
+}
+
+/**
+ * Render Stock - Small Template (62x28mm Production Label)
+ * Breadcrumb + Title top-left, Larger QR Code top-right,
+ * Price middle-left, SKU middle-right,
+ * Barcode bottom-left, Logo bottom-right (same height as barcode)
+ */
+function renderStockSmallPage(doc, item, heightPt) {
   const leftMargin = 10;
   const rightMargin = 14; // Protect right edge from thermal cut margin
   const topY = 10;
 
-  // 1. Right Column: Logo
-  const logoWidth = 44;
-  const logoHeight = logoWidth / (2000 / 906); // ~19.9 pt
-  const logoX = WIDTH_PT - rightMargin - logoWidth; // ~117.75 pt
-  const logoY = topY;
+  // 1. Top-Right: Larger QR Code for easy mobile scanning
+  const qrSize = 27.5; // ~9.7mm square (significantly larger than previous 19.5pt)
+  const qrX = WIDTH_PT - rightMargin - qrSize; // ~134.25 pt
+  const qrY = topY - 1; // 9 pt (bottom at 36.5 pt, cleanly above SKU at 41.5 pt)
 
-  if (fs.existsSync(LOGO_PATH)) {
-    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  if (item._qrPng) {
+    doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
 
-  // 2. Left Column: Category Breadcrumbs & Product Title
+  // 2. Top-Left: Category Breadcrumbs & Product Title
   const leftColX = leftMargin;
-  const leftColWidth = logoX - leftColX - 6; // ~101.75 pt
+  const leftColWidth = qrX - leftColX - 6; // ~118.25 pt
 
   const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
   let titleY = topY;
@@ -121,118 +136,202 @@ function renderModernOpenPage(doc, item, heightPt) {
       });
   }
 
-  // 4. Barcode (Left) & QR Code (Right for Mobile Stock Management)
-  const qrSize = 19.5; // ~6.9mm square crisp 300 DPI QR code
+  // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
   const bottomMargin = 8.5; // ~3.0mm safety margin to prevent bottom thermal cut clipping
-  const qrX = WIDTH_PT - rightMargin - qrSize + 1;
-  const qrY = heightPt - qrSize - bottomMargin;
+  const barcodeHeight = 16.5;
+  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
+
+  const logoHeight = barcodeHeight; // Match barcode height (16.5 pt)
+  const logoWidth = logoHeight * (2000 / 906); // ~36.42 pt
+  const logoX = WIDTH_PT - rightMargin - logoWidth;
+  const logoY = bottomRowY;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  }
+
+  if (item._barcodePng) {
+    const barcodeX = leftMargin;
+    const barcodeWidth = logoX - barcodeX - 7;
+    doc.image(item._barcodePng, barcodeX, bottomRowY, { width: barcodeWidth, height: barcodeHeight });
+  }
+}
+
+/**
+ * Render Stock - Medium Template (62x54mm Production Label)
+ * Proportional medium layout with larger QR code, bold title, Price/SKU row,
+ * and taller barcode + height-matched OnyaScoot logo at bottom.
+ */
+function renderStockMediumPage(doc, item, heightPt) {
+  const leftMargin = 11;
+  const rightMargin = 14;
+  const topY = 12;
+
+  // 1. Top-Right: Medium-Large QR Code
+  const qrSize = 42; // ~14.8mm square
+  const qrX = WIDTH_PT - rightMargin - qrSize; // ~119.75 pt
+  const qrY = topY;
 
   if (item._qrPng) {
     doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
 
-  if (item._barcodePng) {
-    const barcodeX = leftMargin;
-    const barcodeWidth = qrX - barcodeX - 6;
-    const barcodeHeight = 16.5;
-    const barcodeY = heightPt - barcodeHeight - bottomMargin;
-    doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
-  }
-}
+  // 2. Top-Left: Category Breadcrumbs & Product Title
+  const leftColX = leftMargin;
+  const leftColWidth = qrX - leftColX - 8; // ~100.75 pt
 
-/**
- * Render Classic Hairline Template (Preserved Template A)
- * Logo left, Hairline divider, Title right, SKU left, Price right, Barcode bottom
- */
-function renderClassicHairlinePage(doc, item, heightPt) {
-  const rightMargin = 14;
-  const leftMargin = 10;
-  const colDividerX = 56;
-  const rightColX = 62;
-  const rightColWidth = WIDTH_PT - rightColX - rightMargin;
-
-  const lineTopY = 10;
-  const lineBottomY = 49;
-
-  // 1. Hairline divider
-  doc.moveTo(colDividerX, lineTopY)
-     .lineTo(colDividerX, lineBottomY)
-     .lineWidth(0.35)
-     .strokeColor("#000000")
-     .stroke();
-
-  // 2. Logo Left Column (vertically centered)
-  const logoWidth = 44;
-  const logoHeight = logoWidth / (2000 / 906);
-  const lineCenterY = (lineTopY + lineBottomY) / 2;
-  const logoY = lineCenterY - (logoHeight / 2);
-
-  if (fs.existsSync(LOGO_PATH)) {
-    doc.image(LOGO_PATH, leftMargin, logoY, { width: logoWidth, height: logoHeight });
-  }
-
-  // 3. Title Right Column & Category Breadcrumbs
   const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
-  let titleY = 10;
+  let titleY = topY;
 
   if (breadcrumbText) {
-    doc.fontSize(4.8).font("Helvetica").fillColor("#000000")
-      .text(breadcrumbText, rightColX, 9, {
-        width: rightColWidth,
+    doc.fontSize(6.5).font("Helvetica").fillColor("#000000")
+      .text(breadcrumbText, leftColX, topY, {
+        width: leftColWidth,
         align: "left",
         ellipsis: true
       });
-    titleY = 14.5;
+    titleY = topY + 9;
   }
 
   const titleText = (item.title || "ITEM NAME").toUpperCase();
-  const titleFontSize = breadcrumbText ? 7.6 : 8.1;
+  const titleFontSize = breadcrumbText ? 10.2 : 11.0;
   doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
-    .text(titleText, rightColX, titleY, {
-      width: rightColWidth,
+    .text(titleText, leftColX, titleY, {
+      width: leftColWidth,
       align: "left",
-      lineGap: -0.2
+      lineGap: 0.5
     });
 
-  // 4. SKU & Price
-  const skuPriceY = lineBottomY - 8.5;
-  const skuDisplay = item.sku || "";
-  if (skuDisplay) {
-    doc.fontSize(5.6).font("Helvetica").fillColor("#000000")
-      .text(skuDisplay, rightColX, skuPriceY + 1.4, {
-        width: rightColWidth - 40,
-        align: "left"
-      });
-  }
-
+  // 3. Shared Baseline: PRICE (left) & SKU (right)
+  const skuPriceY = 86;
   const priceDisplay = item.price !== undefined && item.price !== null
     ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
     : "";
 
   if (priceDisplay) {
-    doc.fontSize(7.4).font("Helvetica-Bold").fillColor("#000000")
-      .text(priceDisplay, rightColX, skuPriceY, {
-        width: rightColWidth,
+    doc.fontSize(8.5).font("Helvetica").fillColor("#000000")
+      .text(priceDisplay, leftColX, skuPriceY, {
+        width: 75,
+        align: "left"
+      });
+  }
+
+  const skuDisplay = item.sku || "";
+  if (skuDisplay) {
+    doc.fontSize(8.5).font("Helvetica").fillColor("#000000")
+      .text(skuDisplay, WIDTH_PT - rightMargin - 85, skuPriceY, {
+        width: 85,
         align: "right"
       });
   }
 
-  // 5. Barcode (Left) & QR Code (Right for Mobile Stock Management)
-  const qrSize = 19.5; // ~6.9mm square
-  const bottomMargin = 8.5; // ~3.0mm safety margin to prevent bottom thermal cut clipping
-  const qrX = WIDTH_PT - rightMargin - qrSize + 1;
-  const qrY = heightPt - qrSize - bottomMargin;
+  // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
+  const bottomMargin = 11;
+  const barcodeHeight = 25;
+  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
+
+  const logoHeight = barcodeHeight; // Match barcode height (25 pt)
+  const logoWidth = logoHeight * (2000 / 906); // ~55.19 pt
+  const logoX = WIDTH_PT - rightMargin - logoWidth;
+  const logoY = bottomRowY;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  }
+
+  if (item._barcodePng) {
+    const barcodeX = leftMargin;
+    const barcodeWidth = logoX - barcodeX - 8;
+    doc.image(item._barcodePng, barcodeX, bottomRowY, { width: barcodeWidth, height: barcodeHeight });
+  }
+}
+
+/**
+ * Render Stock - Large Template (62x100mm Production Label)
+ * High-visibility large box/shelf label with large QR code, prominent title,
+ * large Price/SKU row, and tall barcode + height-matched OnyaScoot logo at bottom.
+ */
+function renderStockLargePage(doc, item, heightPt) {
+  const leftMargin = 12;
+  const rightMargin = 14;
+  const topY = 15;
+
+  // 1. Top-Right: Large QR Code for long-range scanning
+  const qrSize = 54; // ~19.0mm square
+  const qrX = WIDTH_PT - rightMargin - qrSize; // ~107.75 pt
+  const qrY = topY;
 
   if (item._qrPng) {
     doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
 
+  // 2. Top-Left: Category Breadcrumbs & Product Title
+  const leftColX = leftMargin;
+  const leftColWidth = qrX - leftColX - 8; // ~87.75 pt
+
+  const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
+  let titleY = topY;
+
+  if (breadcrumbText) {
+    doc.fontSize(8.0).font("Helvetica").fillColor("#000000")
+      .text(breadcrumbText, leftColX, topY, {
+        width: leftColWidth,
+        align: "left",
+        ellipsis: true
+      });
+    titleY = topY + 12;
+  }
+
+  const titleText = (item.title || "ITEM NAME").toUpperCase();
+  const titleFontSize = breadcrumbText ? 13.0 : 14.0;
+  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
+    .text(titleText, leftColX, titleY, {
+      width: leftColWidth,
+      align: "left",
+      lineGap: 1.0
+    });
+
+  // 3. Shared Baseline: PRICE (left) & SKU (right)
+  const skuPriceY = 178;
+  const priceDisplay = item.price !== undefined && item.price !== null
+    ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
+    : "";
+
+  if (priceDisplay) {
+    doc.fontSize(11.5).font("Helvetica").fillColor("#000000")
+      .text(priceDisplay, leftColX, skuPriceY, {
+        width: 80,
+        align: "left"
+      });
+  }
+
+  const skuDisplay = item.sku || "";
+  if (skuDisplay) {
+    doc.fontSize(11.5).font("Helvetica").fillColor("#000000")
+      .text(skuDisplay, WIDTH_PT - rightMargin - 90, skuPriceY, {
+        width: 90,
+        align: "right"
+      });
+  }
+
+  // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
+  const bottomMargin = 14;
+  const barcodeHeight = 31;
+  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
+
+  const logoHeight = barcodeHeight; // Match barcode height (31 pt)
+  const logoWidth = logoHeight * (2000 / 906); // ~68.43 pt
+  const logoX = WIDTH_PT - rightMargin - logoWidth;
+  const logoY = bottomRowY;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  }
+
   if (item._barcodePng) {
     const barcodeX = leftMargin;
-    const barcodeWidth = qrX - barcodeX - 6;
-    const barcodeHeight = 16.5;
-    const barcodeY = heightPt - barcodeHeight - bottomMargin;
-    doc.image(item._barcodePng, barcodeX, barcodeY, { width: barcodeWidth, height: barcodeHeight });
+    const barcodeWidth = logoX - barcodeX - 8;
+    doc.image(item._barcodePng, barcodeX, bottomRowY, { width: barcodeWidth, height: barcodeHeight });
   }
 }
 
@@ -240,9 +339,9 @@ function renderClassicHairlinePage(doc, item, heightPt) {
  * Generate a multi-page PDF buffer containing batch labels
  */
 async function generateLabelsPdf(items, options = {}) {
-  const heightMm = options.labelHeightMm || DEFAULT_LABEL_HEIGHT_MM;
+  const resolved = resolveTemplate(options.template);
+  const heightMm = options.labelHeightMm || resolved.heightMm;
   const heightPt = heightMm * MM_TO_PT;
-  const template = options.template || "modern_open";
 
   // Pre-generate unique barcodes and QR codes
   const barcodeCache = new Map();
@@ -282,7 +381,7 @@ async function generateLabelsPdf(items, options = {}) {
 
     const buffers = [];
     doc.on("data", (chunk) => buffers.push(chunk));
-    doc.on("end", () => resolve({ pdfBuffer: Buffer.concat(buffers), totalLabels: flatLabels.length }));
+    doc.on("end", () => resolve({ pdfBuffer: Buffer.concat(buffers), totalLabels: flatLabels.length, heightMm }));
     doc.on("error", reject);
 
     for (const label of flatLabels) {
@@ -291,10 +390,12 @@ async function generateLabelsPdf(items, options = {}) {
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       });
 
-      if (template === "classic_hairline") {
-        renderClassicHairlinePage(doc, label, heightPt);
+      if (resolved.id === "stock - medium") {
+        renderStockMediumPage(doc, label, heightPt);
+      } else if (resolved.id === "stock - large") {
+        renderStockLargePage(doc, label, heightPt);
       } else {
-        renderModernOpenPage(doc, label, heightPt);
+        renderStockSmallPage(doc, label, heightPt);
       }
     }
 
@@ -392,21 +493,25 @@ app.get("/api/printer/status", (req, res) => {
 // Test print endpoint
 app.post("/api/print/test", async (req, res) => {
   try {
-    const template = req.body.template || "modern_open";
+    const template = req.body.template || "stock - small";
     const testItem = {
       title: "FRONT HYDRAULIC FORK SUSPENSION ASSEMBLY",
       sku: "OYS-20941-FSK",
       price: 145.00,
       barcode: "OYS-20941-FSK",
+      breadcrumb: "Suspension > Forks",
       quantity: 1,
     };
 
-    const { pdfBuffer } = await generateLabelsPdf([testItem], { template });
-    const result = await sendPdfToCups(pdfBuffer, { jobName: "OYS Test Print" });
+    const { pdfBuffer, heightMm } = await generateLabelsPdf([testItem], { template });
+    const result = await sendPdfToCups(pdfBuffer, {
+      labelHeightMm: heightMm,
+      jobName: `OYS Test Print (${template})`,
+    });
 
     res.json({
       success: true,
-      message: "Test label dispatched to Brother QL-810W",
+      message: `Test label (${template}) dispatched to Brother QL-810W`,
       jobId: result.jobId,
       jobState: result.jobState,
     });
@@ -419,19 +524,19 @@ app.post("/api/print/test", async (req, res) => {
 // Bulk / Batch label print endpoint
 app.post("/api/print/labels", async (req, res) => {
   try {
-    const { items, template = "modern_open", labelHeightMm = DEFAULT_LABEL_HEIGHT_MM } = req.body;
+    const { items, template = "stock - small", labelHeightMm } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, error: "Items array is required" });
     }
 
-    const { pdfBuffer, totalLabels } = await generateLabelsPdf(items, {
+    const { pdfBuffer, totalLabels, heightMm } = await generateLabelsPdf(items, {
       template,
       labelHeightMm,
     });
 
     const result = await sendPdfToCups(pdfBuffer, {
-      labelHeightMm,
+      labelHeightMm: heightMm,
       jobName: `OYS Batch Print (${totalLabels} labels)`,
     });
 
@@ -448,7 +553,17 @@ app.post("/api/print/labels", async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Label-Printer] Running on port ${PORT}`);
-  console.log(`[Label-Printer] CUPS Target: ${CUPS_SERVER_URL}/printers/${CUPS_PRINTER_NAME}`);
-});
+if (require.main === module) {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[Label-Printer] Running on port ${PORT}`);
+    console.log(`[Label-Printer] CUPS Target: ${CUPS_SERVER_URL}/printers/${CUPS_PRINTER_NAME}`);
+  });
+}
+
+module.exports = {
+  generateLabelsPdf,
+  renderStockSmallPage,
+  renderStockMediumPage,
+  renderStockLargePage,
+  resolveTemplate,
+};
