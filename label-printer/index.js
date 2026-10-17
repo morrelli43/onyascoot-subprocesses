@@ -56,17 +56,17 @@ async function generateQrCode(url) {
  * Resolve template identifier and default label height in mm
  */
 function resolveTemplate(templateInput) {
-  const norm = String(templateInput || "stock - small").trim().toLowerCase();
+  const norm = String(templateInput || "stock - medium").trim().toLowerCase();
   if (norm === "job label" || norm === "job_label" || norm === "job - label") {
     return { id: "Job Label", heightMm: 100 };
   }
-  if (norm === "stock - medium" || norm === "stock_medium" || norm === "medium") {
-    return { id: "stock - medium", heightMm: 54 };
+  if (norm === "stock - small" || norm === "stock_small" || norm === "small") {
+    return { id: "stock - small", heightMm: DEFAULT_LABEL_HEIGHT_MM };
   }
   if (norm === "stock - large" || norm === "stock_large" || norm === "large") {
     return { id: "stock - large", heightMm: 100 };
   }
-  return { id: "stock - small", heightMm: DEFAULT_LABEL_HEIGHT_MM };
+  return { id: "stock - medium", heightMm: 54 };
 }
 
 /**
@@ -662,7 +662,7 @@ app.get("/api/printer/status", (req, res) => {
 // Test print endpoint
 app.post("/api/print/test", async (req, res) => {
   try {
-    const template = req.body.template || "stock - small";
+    const template = req.body.template || "stock - medium";
     const testItem = {
       title: "FRONT HYDRAULIC FORK SUSPENSION ASSEMBLY",
       sku: "OYS-20941-FSK",
@@ -693,7 +693,7 @@ app.post("/api/print/test", async (req, res) => {
 // Bulk / Batch label print endpoint
 app.post("/api/print/labels", async (req, res) => {
   try {
-    const { items, template = "stock - small", labelHeightMm } = req.body;
+    const { items, template = "stock - medium", labelHeightMm } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, error: "Items array is required" });
