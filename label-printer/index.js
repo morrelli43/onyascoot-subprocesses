@@ -251,90 +251,102 @@ function renderStockMediumPage(doc, item, heightPt) {
 
 /**
  * Render Stock - Large Template (62x100mm Production Label)
- * High-visibility large box/shelf label with large QR code, prominent title,
- * large Price/SKU row, and tall barcode + height-matched OnyaScoot logo at bottom.
+ * Vertical full-width layout:
+ * 1. Top: OnyaScoot Logo (~10% larger, centered)
+ * 2. Underneath Logo: Compact QR Code (~half size, centered)
+ * 3. Underneath QR Code: Category Breadcrumb + Prominent Product Name (full width)
+ * 4. Just under Product Name: Retail Price
+ * 5. Bottom: Code128 Barcode spanning full width of the label, with SKU underneath
  */
 function renderStockLargePage(doc, item, heightPt) {
   const leftMargin = 12;
   const rightMargin = 14;
-  const topY = 15;
+  const fullWidth = WIDTH_PT - leftMargin - rightMargin; // ~149.75 pt
 
-  // 1. Top-Right: Large QR Code for long-range scanning
-  const qrSize = 54; // ~19.0mm square
-  const qrX = WIDTH_PT - rightMargin - qrSize; // ~107.75 pt
-  const qrY = topY;
-
-  if (item._qrPng) {
-    doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
-  }
-
-  // 2. Top-Left: Category Breadcrumbs & Product Title
-  const leftColX = leftMargin;
-  const leftColWidth = qrX - leftColX - 8; // ~87.75 pt
-
-  const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
-  let titleY = topY;
-
-  if (breadcrumbText) {
-    doc.fontSize(8.0).font("Helvetica").fillColor("#000000")
-      .text(breadcrumbText, leftColX, topY, {
-        width: leftColWidth,
-        align: "left",
-        ellipsis: true
-      });
-    titleY = topY + 12;
-  }
-
-  const titleText = (item.title || "ITEM NAME").toUpperCase();
-  const titleFontSize = breadcrumbText ? 13.0 : 14.0;
-  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
-    .text(titleText, leftColX, titleY, {
-      width: leftColWidth,
-      align: "left",
-      lineGap: 1.0
-    });
-
-  // 3. Shared Baseline: PRICE (left) & SKU (right)
-  const skuPriceY = 178;
-  const priceDisplay = item.price !== undefined && item.price !== null
-    ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
-    : "";
-
-  if (priceDisplay) {
-    doc.fontSize(11.5).font("Helvetica").fillColor("#000000")
-      .text(priceDisplay, leftColX, skuPriceY, {
-        width: 80,
-        align: "left"
-      });
-  }
-
-  const skuDisplay = item.sku || "";
-  if (skuDisplay) {
-    doc.fontSize(11.5).font("Helvetica").fillColor("#000000")
-      .text(skuDisplay, WIDTH_PT - rightMargin - 90, skuPriceY, {
-        width: 90,
-        align: "right"
-      });
-  }
-
-  // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
-  const bottomMargin = 14;
-  const barcodeHeight = 31;
-  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
-
-  const logoHeight = barcodeHeight; // Match barcode height (31 pt)
-  const logoWidth = logoHeight * (2000 / 906); // ~68.43 pt
-  const logoX = WIDTH_PT - rightMargin - logoWidth;
-  const logoY = bottomRowY;
+  // 1. Top: OnyaScoot Logo (~10% larger, Centered)
+  const logoHeight = 35.2; // +10% from 32pt
+  const logoWidth = logoHeight * (2000 / 906); // ~77.70 pt
+  const logoX = leftMargin + (fullWidth - logoWidth) / 2;
+  const logoY = 12;
 
   if (fs.existsSync(LOGO_PATH)) {
     doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
   }
 
+  // 2. Underneath Logo: Compact QR Code (~half size, Centered)
+  const qrSize = 36; // ~12.7mm square (around half of previous 68pt)
+  const qrX = leftMargin + (fullWidth - qrSize) / 2;
+  const qrY = logoY + logoHeight + 7; // ~54.2 pt (bottom at ~90.2 pt)
+
+  if (item._qrPng) {
+    doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+  }
+
+  // 3. Underneath QR Code: Category Breadcrumb & Prominent Full-Width Product Name
+  const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
+  let titleY = qrY + qrSize + 9; // ~99.2 pt
+
+  if (breadcrumbText) {
+    doc.fontSize(8).font("Helvetica").fillColor("#000000")
+      .text(breadcrumbText, leftMargin, titleY, {
+        width: fullWidth,
+        align: "center",
+        ellipsis: true,
+      });
+    titleY += 12; // ~111.2 pt
+  }
+
+  const titleText = (item.title || "ITEM NAME").toUpperCase();
+  const titleFontSize = 14.5;
+  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000");
+
+  const titleOptions = {
+    width: fullWidth,
+    align: "center",
+    lineGap: 0.6,
+  };
+  const maxTitleHeight = 82;
+  const measuredTitleHeight = Math.min(maxTitleHeight, doc.heightOfString(titleText, titleOptions));
+
+  doc.text(titleText, leftMargin, titleY, {
+    ...titleOptions,
+    height: maxTitleHeight,
+    ellipsis: true,
+  });
+
+  // 4. Just Under Product Name: Price
+  const priceDisplay = item.price !== undefined && item.price !== null
+    ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
+    : "";
+
+  const priceY = titleY + measuredTitleHeight + 6;
+  if (priceDisplay) {
+    doc.fontSize(13).font("Helvetica-Bold").fillColor("#000000")
+      .text(priceDisplay, leftMargin, priceY, {
+        width: fullWidth,
+        align: "center",
+      });
+  }
+
+  // 5. Bottom: Full-Width Barcode + SKU underneath the Barcode
+  const barcodeHeight = 35;
+  const skuY = heightPt - 22; // ~261.46 pt
+  const barcodeY = skuY - barcodeHeight - 5; // ~221.46 pt
+
   if (item._barcodePng) {
-    const barcodeX = leftMargin;
-    const barcodeWidth = logoX - barcodeX - 8;
-    doc.image(item._barcodePng, barcodeX, bottomRowY, { width: barcodeWidth, height: barcodeHeight });
+    doc.image(item._barcodePng, leftMargin, barcodeY, {
+      width: fullWidth,
+      height: barcodeHeight,
+    });
+  }
+
+  const skuDisplay = item.sku || "";
+  if (skuDisplay) {
+    doc.fontSize(9.5).font("Helvetica").fillColor("#000000")
+      .text(skuDisplay, leftMargin, skuY, {
+        width: fullWidth,
+        align: "center",
+      });
   }
 }
 
