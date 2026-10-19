@@ -31,6 +31,28 @@ if (!API_KEY) {
 // Map to store active WebSocket connections by Device ID
 const devices = new Map();
 
+// Map to manage async request-response cycles over WebSocket
+const pendingWsRequests = new Map();
+
+function sendWsRequest(ws, payload, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const requestId = uuidv4();
+    const timer = setTimeout(() => {
+      pendingWsRequests.delete(requestId);
+      reject(new Error(`WebSocket request timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    pendingWsRequests.set(requestId, { resolve, reject, timer });
+    try {
+      ws.send(JSON.stringify({ ...payload, requestId }));
+    } catch (err) {
+      clearTimeout(timer);
+      pendingWsRequests.delete(requestId);
+      reject(err);
+    }
+  });
+}
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
 
@@ -127,12 +149,23 @@ server.on('upgrade', (request, socket, head) => {
 
     ws.on('message', async (message) => {
       try {
-        const data = JSON.parse(message);
-        console.log(`📩 Message from device ${deviceId}:`, data);
+        const raw = JSON.parse(message);
+        console.log(`📩 Message from device ${deviceId}:`, raw.action || raw.event || 'message');
+
+        // Check if this is a response to a pending request (fetch_conversations, fetch_messages)
+        if (raw.action === 'fetch_conversations_response' || raw.action === 'fetch_messages_response') {
+          const pending = pendingWsRequests.get(raw.requestId);
+          if (pending) {
+            clearTimeout(pending.timer);
+            pendingWsRequests.delete(raw.requestId);
+            pending.resolve(raw.data || []);
+            return;
+          }
+        }
 
         // Handle device registration / friendly name updates from handset
-        if (data.action === 'device_register') {
-          const devName = data.deviceName || data.device_name;
+        if (raw.action === 'device_register') {
+          const devName = raw.deviceName || raw.device_name;
           if (devName) ws.deviceName = devName;
           console.log(`📱 Device registration received: ${deviceId} -> "${ws.deviceName || 'unnamed'}"`);
           const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
@@ -153,14 +186,20 @@ server.on('upgrade', (request, socket, head) => {
           return;
         }
 
-        // --- DATABASE STORAGE ---
-        const messageId = data.id || `msg-${uuidv4().slice(0, 8)}`;
+        // --- DATABASE STORAGE & INBOUND PROCESSING ---
+        // Support nested payloads: { event: "incoming_sms", data: { ... } } or flat payloads
+        const inner = (raw.data && typeof raw.data === 'object') ? raw.data : raw;
+        const messageId = raw.id || inner.id || `msg-${uuidv4().slice(0, 8)}`;
         let mediaPath = null;
         let mimeType = null;
 
         // Handle MMS data
-        if (data.media && Array.isArray(data.media) && data.media.length > 0) {
-          const part = data.media[0];
+        const mediaArray = inner.media || raw.media;
+        const attachmentBase64 = inner.attachmentBase64 || raw.attachmentBase64;
+        const attachmentMimeType = inner.attachmentMimeType || raw.attachmentMimeType;
+
+        if (mediaArray && Array.isArray(mediaArray) && mediaArray.length > 0) {
+          const part = mediaArray[0];
           if (part.dataBase64) {
             mimeType = part.mimeType || 'image/jpeg';
             const ext = mimeType.split('/')[1] || 'jpg';
@@ -170,64 +209,77 @@ server.on('upgrade', (request, socket, head) => {
             mediaPath = fileName;
             console.log(`🖼️ Saved MMS image: ${fileName}`);
           }
-        } else if (data.attachmentBase64) {
-          mimeType = 'image/jpeg'; // Default for legacy
-          const fileName = `${messageId}.jpg`;
+        } else if (attachmentBase64) {
+          mimeType = attachmentMimeType || 'image/jpeg';
+          const ext = mimeType.split('/')[1] || 'jpg';
+          const fileName = `${messageId}.${ext}`;
           const fullPath = path.join(mediaDir, fileName);
-          fs.writeFileSync(fullPath, Buffer.from(data.attachmentBase64, 'base64'));
+          fs.writeFileSync(fullPath, Buffer.from(attachmentBase64, 'base64'));
           mediaPath = fileName;
-          console.log(`🖼️ Saved MMS image (legacy): ${fileName}`);
+          console.log(`🖼️ Saved MMS image (attachmentBase64): ${fileName}`);
         }
 
-        const address = data.from || data.address || data.sender;
-        const body = data.text || data.body || data.message || data.snippet;
-        const threadId = data.threadId || data.thread_id;
+        const address = inner.address || inner.from || inner.sender || raw.address || raw.from || raw.sender;
+        const body = inner.body || inner.text || inner.message || inner.snippet || raw.body || raw.text || '';
+        const threadId = inner.threadId || inner.thread_id || raw.threadId || raw.thread_id;
+        const rawTime = inner.timestamp || raw.timestamp;
+        const timestamp = rawTime ? (typeof rawTime === 'number' ? new Date(rawTime).toISOString() : new Date(rawTime).toISOString()) : new Date().toISOString();
 
-        saveMessage({
-          id: messageId,
-          deviceId,
-          address,
-          body,
-          direction: 'inbound',
-          mediaPath,
-          mimeType,
-          timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
-          threadId,
-          status: 'received'
-        });
-
-        // Forward directly to the Operations App webhook
-        const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
-        try {
-          // Map device payload to Onyascoot Operations format
-          const forwardData = {
-            address: address,
-            body: body,
+        if (address) {
+          saveMessage({
+            id: messageId,
+            deviceId,
+            address,
+            body,
             direction: 'inbound',
-            message_uid: messageId,
-            threadId: threadId,
-            deviceId: deviceId,
-            deviceName: ws.deviceName || null,
-            mediaUrl: mediaPath ? `/media/${mediaPath}` : null,
-            ...data
-          };
+            mediaPath,
+            mimeType,
+            timestamp,
+            threadId,
+            status: 'received'
+          });
 
-          const headers = { 'Content-Type': 'application/json' };
-
-          if (OPS_API_KEY) {
-            headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
-          }
-
+          // Forward directly to the Operations App webhook
+          const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
           try {
-            await axios.post(targetUrl, forwardData, { headers, timeout: 5000 });
-            console.log(`🚀 Forwarded inbound SMS to Operations: ${targetUrl}`);
-          } catch(firstErr) {
-            console.error(`⚠️ Failed to forward to ${targetUrl}: ${firstErr.message}, trying fallback https://portal.onyascoot.com/api/webhooks/sms`);
-            await axios.post('https://portal.onyascoot.com/api/webhooks/sms', forwardData, { headers, timeout: 5000 });
-            console.log(`🚀 Forwarded inbound SMS to external interface: https://portal.onyascoot.com/api/webhooks/sms`);
+            const mediaUrl = mediaPath ? `/media/${mediaPath}` : null;
+            // Map device payload to Onyascoot Operations format
+            const forwardData = {
+              address: address,
+              body: body,
+              direction: 'inbound',
+              message_uid: messageId,
+              threadId: threadId,
+              deviceId: deviceId,
+              deviceName: ws.deviceName || null,
+              mediaUrl: mediaUrl,
+              timestamp,
+              ...raw,
+              data: {
+                ...(typeof raw.data === 'object' ? raw.data : {}),
+                address,
+                body,
+                threadId,
+                mediaUrl
+              }
+            };
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (OPS_API_KEY) {
+              headers['Authorization'] = `Bearer ${OPS_API_KEY}`;
+            }
+
+            try {
+              await axios.post(targetUrl, forwardData, { headers, timeout: 5000 });
+              console.log(`🚀 Forwarded inbound SMS to Operations: ${targetUrl}`);
+            } catch(firstErr) {
+              console.error(`⚠️ Failed to forward to ${targetUrl}: ${firstErr.message}, trying fallback https://portal.onyascoot.com/api/webhooks/sms`);
+              await axios.post('https://portal.onyascoot.com/api/webhooks/sms', forwardData, { headers, timeout: 5000 });
+              console.log(`🚀 Forwarded inbound SMS to external interface: https://portal.onyascoot.com/api/webhooks/sms`);
+            }
+          } catch (err) {
+            console.error(`❌ Error forwarding inbound SMS: ${err.message}`);
           }
-        } catch (err) {
-          console.error(`❌ Error forwarding inbound SMS: ${err.message}`);
         }
 
       } catch (err) {
@@ -305,6 +357,10 @@ app.post('/api/send-sms', (req, res) => {
  * Proxy: GET /api/conversations -> Phone HTTP API
  * Allows the Operations Dashboard to retrieve all SMS threads from the phone.
  */
+/**
+ * GET /api/conversations
+ * Retrieves all SMS threads from the phone via WebSocket first, then HTTP fallback, or local DB.
+ */
 app.get('/api/conversations', async (req, res) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.split(' ')[1] !== API_KEY) {
@@ -323,45 +379,69 @@ app.get('/api/conversations', async (req, res) => {
     })));
   }
 
+  // 1. Try active WebSocket client first (works over cellular NAT and Wi-Fi)
+  const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
+  if (activeWs) {
+    try {
+      console.log(`📲 Querying /api/conversations from device ${activeWs.deviceId} via WebSocket`);
+      const convs = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 10000);
+      if (Array.isArray(convs) && convs.length > 0) {
+        convs.forEach(conv => {
+          saveMessage({
+            id: `sync-conv-${conv.threadId || conv.id}`,
+            deviceId: activeWs.deviceId || 'sync',
+            address: conv.address,
+            body: conv.snippet || conv.body || '',
+            direction: 'inbound',
+            timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
+            threadId: conv.threadId || conv.id,
+            status: 'synced'
+          });
+        });
+        return res.json(convs);
+      }
+    } catch (wsErr) {
+      console.warn(`⚠️ WebSocket conversations query failed: ${wsErr.message}`);
+    }
+  }
+
+  // 2. Fallback to HTTP proxy if phone LAN IP is accessible
   const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
-  if (!phoneUrl) {
-    // If phone not connected, return whatever we have in local DB
-    return res.json(localConversations);
-  }
-
-  try {
-    console.log(`📲 Proxying GET /api/conversations -> ${phoneUrl} (Syncing)`);
-    const response = await axios.get(`${phoneUrl}/api/conversations`, {
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
-      timeout: 10000
-    });
-
-    // Background: update local DB with fresh data
-    response.data.forEach(conv => {
-      // Create a dummy message to trigger conversation upsert
-      saveMessage({
-        id: `sync-conv-${conv.threadId || conv.id}`,
-        deviceId: 'sync',
-        address: conv.address,
-        body: conv.snippet || conv.body || '',
-        direction: 'inbound',
-        timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
-        threadId: conv.threadId || conv.id,
-        status: 'synced'
+  if (phoneUrl) {
+    try {
+      console.log(`📲 Proxying GET /api/conversations -> ${phoneUrl}`);
+      const response = await axios.get(`${phoneUrl}/api/conversations`, {
+        headers: { 'Authorization': `Bearer ${API_KEY}` },
+        timeout: 10000
       });
-    });
 
-    res.json(response.data);
-  } catch (err) {
-    console.error(`❌ Failed to proxy conversations: ${err.message}`);
-    // Fallback to local DB if proxy fails
-    res.json(localConversations);
+      if (Array.isArray(response.data)) {
+        response.data.forEach(conv => {
+          saveMessage({
+            id: `sync-conv-${conv.threadId || conv.id}`,
+            deviceId: 'sync',
+            address: conv.address,
+            body: conv.snippet || conv.body || '',
+            direction: 'inbound',
+            timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
+            threadId: conv.threadId || conv.id,
+            status: 'synced'
+          });
+        });
+        return res.json(response.data);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to proxy conversations via HTTP: ${err.message}`);
+    }
   }
+
+  // Fallback to local DB if proxy fails
+  res.json(localConversations);
 });
 
 /**
- * Proxy: GET /api/messages -> Phone HTTP API
- * Forwards threadId, limit, offset, includeMms query params.
+ * GET /api/messages
+ * Retrieves messages for a thread via WebSocket first, then HTTP fallback, or local DB.
  */
 app.get('/api/messages', async (req, res) => {
   const authHeader = req.headers['authorization'];
@@ -383,64 +463,133 @@ app.get('/api/messages', async (req, res) => {
       date: new Date(m.timestamp).getTime(),
       threadId: m.thread_id,
       mediaUrl: m.media_path ? `/media/${m.media_path}` : null,
-      attachmentBase64: null // We serve via mediaUrl now
+      attachmentBase64: null
     })));
   }
 
-  const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
-  if (!phoneUrl) {
-    return res.json(localMessages);
-  }
+  // 1. Try active WebSocket client first
+  const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
+  if (activeWs) {
+    try {
+      console.log(`📲 Querying /api/messages from device ${activeWs.deviceId} via WebSocket (threadId: ${threadId || 'all'})`);
+      const msgs = await sendWsRequest(activeWs, {
+        action: 'fetch_messages',
+        threadId: threadId ? Number(threadId) : -1,
+        address: address || '',
+        limit: parseInt(limit) || 50,
+        offset: parseInt(offset) || 0,
+        includeMms: true
+      }, 15000);
 
-  const query = new URLSearchParams(req.query).toString();
-  try {
-    console.log(`📲 Proxying GET /api/messages?${query} -> ${phoneUrl} (Syncing)`);
-    const response = await axios.get(`${phoneUrl}/api/messages?${query}`, {
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
-      timeout: 15000
-    });
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        msgs.forEach(pm => {
+          let mediaPath = null;
+          let mimeType = null;
+          if (pm.attachmentBase64) {
+            mimeType = pm.attachmentMimeType || 'image/jpeg';
+            const ext = mimeType.split('/')[1] || 'jpg';
+            const fileName = `${pm.id || uuidv4().slice(0, 8)}.${ext}`;
+            const fullPath = path.join(mediaDir, fileName);
+            try {
+              if (!fs.existsSync(fullPath)) {
+                fs.writeFileSync(fullPath, Buffer.from(pm.attachmentBase64, 'base64'));
+              }
+              mediaPath = fileName;
+              pm.mediaUrl = `/media/${fileName}`;
+              delete pm.attachmentBase64;
+            } catch (writeErr) {
+              console.error(`Failed to write sync attachment: ${writeErr.message}`);
+            }
+          }
 
-    // Background: update local DB with fresh data
-    if (Array.isArray(response.data)) {
-      response.data.forEach(pm => {
-        saveMessage({
-          id: pm.id || `sync-msg-${uuidv4().slice(0, 8)}`,
-          deviceId: 'sync',
-          address: pm.address || address,
-          body: pm.body || '',
-          direction: pm.type === 1 ? 'inbound' : 'outbound',
-          timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
-          threadId: pm.threadId || threadId,
-          status: 'synced'
+          saveMessage({
+            id: String(pm.id || `sync-msg-${uuidv4().slice(0, 8)}`),
+            deviceId: activeWs.deviceId || 'sync',
+            address: pm.address || address,
+            body: pm.body || '',
+            direction: pm.type === 1 ? 'inbound' : 'outbound',
+            mediaPath,
+            mimeType,
+            timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
+            threadId: pm.threadId || threadId,
+            status: 'synced'
+          });
         });
-      });
+        return res.json(msgs);
+      }
+    } catch (wsErr) {
+      console.warn(`⚠️ WebSocket messages query failed: ${wsErr.message}`);
     }
-
-    res.json(response.data);
-  } catch (err) {
-    console.error(`❌ Failed to proxy messages: ${err.message}`);
-    res.json(localMessages);
   }
+
+  // 2. Fallback to HTTP proxy
+  const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
+  if (phoneUrl) {
+    const query = new URLSearchParams(req.query).toString();
+    try {
+      console.log(`📲 Proxying GET /api/messages?${query} -> ${phoneUrl}`);
+      const response = await axios.get(`${phoneUrl}/api/messages?${query}`, {
+        headers: { 'Authorization': `Bearer ${API_KEY}` },
+        timeout: 15000
+      });
+
+      if (Array.isArray(response.data)) {
+        response.data.forEach(pm => {
+          saveMessage({
+            id: pm.id || `sync-msg-${uuidv4().slice(0, 8)}`,
+            deviceId: 'sync',
+            address: pm.address || address,
+            body: pm.body || '',
+            direction: pm.type === 1 ? 'inbound' : 'outbound',
+            timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
+            threadId: pm.threadId || threadId,
+            status: 'synced'
+          });
+        });
+        return res.json(response.data);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to proxy messages via HTTP: ${err.message}`);
+    }
+  }
+
+  res.json(localMessages);
 });
 
 /**
- * Full Sync: Pulls every conversation and message from the phone.
+ * Full Sync: Pulls every conversation and message from the phone via WebSocket or HTTP.
  */
 async function syncAllFromPhone() {
+  const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
   const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
-  if (!phoneUrl) {
-    console.error('❌ Cannot sync: Phone not connected');
+
+  if (!activeWs && !phoneUrl) {
+    console.error('❌ Cannot sync: Phone not connected via WebSocket or HTTP');
     return { error: 'Phone not connected' };
   }
 
   console.log('🔄 Starting Full Sync from phone...');
   try {
-    const convRes = await axios.get(`${phoneUrl}/api/conversations`, {
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
-      timeout: 20000
-    });
+    let conversations = [];
+    if (activeWs) {
+      try {
+        conversations = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 20000);
+      } catch (wsErr) {
+        console.warn(`WebSocket sync conversations failed: ${wsErr.message}`);
+      }
+    }
+    if ((!conversations || conversations.length === 0) && phoneUrl) {
+      const convRes = await axios.get(`${phoneUrl}/api/conversations`, {
+        headers: { 'Authorization': `Bearer ${API_KEY}` },
+        timeout: 20000
+      });
+      conversations = convRes.data;
+    }
 
-    const conversations = convRes.data;
+    if (!Array.isArray(conversations)) {
+      return { error: 'No conversations returned' };
+    }
+
     console.log(`📑 Found ${conversations.length} conversations. Syncing messages...`);
 
     let totalMessages = 0;
@@ -449,20 +598,39 @@ async function syncAllFromPhone() {
       const address = conv.address;
       
       try {
-        const msgRes = await axios.get(`${phoneUrl}/api/messages?threadId=${threadId}&limit=1000&includeMms=true`, {
-          headers: { 'Authorization': `Bearer ${API_KEY}` },
-          timeout: 30000
-        });
+        let messages = [];
+        if (activeWs) {
+          try {
+            messages = await sendWsRequest(activeWs, {
+              action: 'fetch_messages',
+              threadId: Number(threadId),
+              address: address || '',
+              limit: 500,
+              includeMms: true
+            }, 30000);
+          } catch (wsErr) {
+            console.warn(`WS sync failed for thread ${threadId}: ${wsErr.message}`);
+          }
+        }
+        if ((!messages || messages.length === 0) && phoneUrl) {
+          const msgRes = await axios.get(`${phoneUrl}/api/messages?threadId=${threadId}&limit=500&includeMms=true`, {
+            headers: { 'Authorization': `Bearer ${API_KEY}` },
+            timeout: 30000
+          });
+          messages = msgRes.data;
+        }
 
-        const messages = msgRes.data;
         if (Array.isArray(messages)) {
           messages.forEach(pm => {
-            const messageId = pm.id || `sync-${threadId}-${pm.date}`;
+            const messageId = String(pm.id || `sync-${threadId}-${pm.date}`);
             
             // Handle MMS for sync too
             let mediaPath = null;
+            let mimeType = null;
             if (pm.attachmentBase64) {
-              const fileName = `${messageId}.jpg`;
+              mimeType = pm.attachmentMimeType || 'image/jpeg';
+              const ext = mimeType.split('/')[1] || 'jpg';
+              const fileName = `${messageId}.${ext}`;
               const fullPath = path.join(mediaDir, fileName);
               if (!fs.existsSync(fullPath)) {
                 fs.writeFileSync(fullPath, Buffer.from(pm.attachmentBase64, 'base64'));
@@ -479,6 +647,7 @@ async function syncAllFromPhone() {
               timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
               threadId: threadId,
               mediaPath: mediaPath,
+              mimeType: mimeType,
               status: 'synced'
             });
           });
