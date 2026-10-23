@@ -384,7 +384,7 @@ app.get('/api/conversations', async (req, res) => {
   if (activeWs) {
     try {
       console.log(`📲 Querying /api/conversations from device ${activeWs.deviceId} via WebSocket`);
-      const convs = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 10000);
+      const convs = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 25000);
       if (Array.isArray(convs) && convs.length > 0) {
         convs.forEach(conv => {
           saveMessage({
