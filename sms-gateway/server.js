@@ -5,7 +5,15 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { saveMessage, getMessages, getConversations, mediaDir } = require('./db');
+const {
+  saveMessage,
+  getMessages,
+  getConversations,
+  findThreadIdsForAddress,
+  getAddressVariants,
+  normalizeThreadId,
+  mediaDir
+} = require('./db');
 require('dotenv').config();
 
 const app = express();
@@ -22,6 +30,11 @@ const WEB_PORTAL_INCOMING_URL = process.env.WEB_PORTAL_INCOMING_URL;
 // Can be set via env var; otherwise discovered from the WebSocket peer address on connect
 const PHONE_API_URL = process.env.PHONE_API_URL || null;
 let discoveredPhoneApiUrl = null; // Set when device connects
+
+// In-memory cache of conversations from the phone so repeated syncs don't block 25s
+let cachedPhoneConversations = null;
+let cachedPhoneConversationsAt = 0;
+let inFlightConversationsPromise = null;
 
 if (!API_KEY) {
   console.error('❌ SMS_GATEWAY_API_KEY is not defined in environment variables');
@@ -50,6 +63,89 @@ function sendWsRequest(ws, payload, timeoutMs = 15000) {
       pendingWsRequests.delete(requestId);
       reject(err);
     }
+  });
+}
+
+function cacheAndPersistConversations(convs, deviceId = 'sync') {
+  if (!Array.isArray(convs) || convs.length === 0) return;
+  cachedPhoneConversations = convs;
+  cachedPhoneConversationsAt = Date.now();
+  convs.forEach(conv => {
+    const tid = normalizeThreadId(conv.threadId || conv.id);
+    if (!tid || !conv.address) return;
+    saveMessage({
+      id: `sync-conv-${tid}`,
+      deviceId: deviceId || 'sync',
+      address: conv.address,
+      body: conv.snippet || conv.body || '',
+      direction: 'inbound',
+      timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
+      threadId: tid,
+      status: 'synced'
+    });
+  });
+}
+
+function processAndPersistPhoneMessages(msgs, fallbackAddress, fallbackThreadId, deviceId = 'sync') {
+  if (!Array.isArray(msgs)) return [];
+  return msgs.map(pm => {
+    let mediaPath = null;
+    let mimeType = null;
+    if (pm.attachmentBase64) {
+      mimeType = pm.attachmentMimeType || 'image/jpeg';
+      const ext = mimeType.split('/')[1] || 'jpg';
+      const fileName = `${pm.id || uuidv4().slice(0, 8)}.${ext}`;
+      const fullPath = path.join(mediaDir, fileName);
+      try {
+        if (!fs.existsSync(fullPath)) {
+          fs.writeFileSync(fullPath, Buffer.from(pm.attachmentBase64, 'base64'));
+        }
+        mediaPath = fileName;
+        pm.mediaUrl = `/media/${fileName}`;
+        delete pm.attachmentBase64;
+      } catch (writeErr) {
+        console.error(`Failed to write sync attachment: ${writeErr.message}`);
+      }
+    } else if (pm.isMms && pm.id) {
+      // Check if media file already exists on disk from a previous sync
+      for (const ext of ['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'amr']) {
+        const candidate = `${pm.id}.${ext}`;
+        if (fs.existsSync(path.join(mediaDir, candidate))) {
+          mediaPath = candidate;
+          pm.mediaUrl = `/media/${candidate}`;
+          break;
+        }
+      }
+    }
+
+    // For outbound MMS where MmsHelper returned own number (+61493678198) or insert-address-token, prefer fallbackAddress
+    let effectiveAddress = pm.address || fallbackAddress;
+    if (
+      fallbackAddress &&
+      (!effectiveAddress ||
+        effectiveAddress === 'insert-address-token' ||
+        effectiveAddress.includes('493678198'))
+    ) {
+      effectiveAddress = fallbackAddress;
+    }
+
+    const cleanTid = normalizeThreadId(pm.threadId || fallbackThreadId);
+    pm.threadId = cleanTid ? Number(cleanTid) : pm.threadId;
+
+    saveMessage({
+      id: String(pm.id || `sync-msg-${uuidv4().slice(0, 8)}`),
+      deviceId: deviceId || 'sync',
+      address: effectiveAddress,
+      body: pm.body || '',
+      direction: pm.type === 1 ? 'inbound' : 'outbound',
+      mediaPath,
+      mimeType,
+      timestamp: pm.date ? new Date(pm.date).toISOString() : (pm.timestamp ? new Date(pm.timestamp).toISOString() : new Date().toISOString()),
+      threadId: cleanTid,
+      status: 'synced'
+    });
+
+    return pm;
   });
 }
 
@@ -152,6 +248,11 @@ server.on('upgrade', (request, socket, head) => {
         const raw = JSON.parse(message);
         console.log(`📩 Message from device ${deviceId}:`, raw.action || raw.event || 'message');
 
+        // Even if the caller timed out waiting for fetch_conversations_response, always cache it when it arrives!
+        if (raw.action === 'fetch_conversations_response' && Array.isArray(raw.data)) {
+          cacheAndPersistConversations(raw.data, deviceId);
+        }
+
         // Check if this is a response to a pending request (fetch_conversations, fetch_messages)
         if (raw.action === 'fetch_conversations_response' || raw.action === 'fetch_messages_response') {
           const pending = pendingWsRequests.get(raw.requestId);
@@ -161,6 +262,7 @@ server.on('upgrade', (request, socket, head) => {
             pending.resolve(raw.data || []);
             return;
           }
+          return;
         }
 
         // Handle device registration / friendly name updates from handset
@@ -189,7 +291,8 @@ server.on('upgrade', (request, socket, head) => {
         // --- DATABASE STORAGE & INBOUND PROCESSING ---
         // Support nested payloads: { event: "incoming_sms", data: { ... } } or flat payloads
         const inner = (raw.data && typeof raw.data === 'object') ? raw.data : raw;
-        const messageId = raw.id || inner.id || `msg-${uuidv4().slice(0, 8)}`;
+        const isColdCall = raw.event === 'cold_call' || inner.event === 'cold_call' || raw.type === 'cold_call' || inner.type === 'cold_call';
+        const messageId = String(raw.id || inner.id || `msg-${uuidv4().slice(0, 8)}`);
         let mediaPath = null;
         let mimeType = null;
 
@@ -221,23 +324,34 @@ server.on('upgrade', (request, socket, head) => {
 
         const address = inner.address || inner.from || inner.sender || raw.address || raw.from || raw.sender;
         const body = inner.body || inner.text || inner.message || inner.snippet || raw.body || raw.text || '';
-        const threadId = inner.threadId || inner.thread_id || raw.threadId || raw.thread_id;
+        const threadId = normalizeThreadId(inner.threadId || inner.thread_id || raw.threadId || raw.thread_id);
         const rawTime = inner.timestamp || raw.timestamp;
         const timestamp = rawTime ? (typeof rawTime === 'number' ? new Date(rawTime).toISOString() : new Date(rawTime).toISOString()) : new Date().toISOString();
 
         if (address) {
-          saveMessage({
-            id: messageId,
-            deviceId,
-            address,
-            body,
-            direction: 'inbound',
-            mediaPath,
-            mimeType,
-            timestamp,
-            threadId,
-            status: 'received'
-          });
+          // Do not save cold_call events into the SMS messages table (they have empty body and pollute SMS deduplication)
+          if (!isColdCall) {
+            saveMessage({
+              id: messageId,
+              deviceId,
+              address,
+              body,
+              direction: 'inbound',
+              mediaPath,
+              mimeType,
+              timestamp,
+              threadId,
+              status: 'received'
+            });
+          }
+
+          // Strip huge base64 fields before forwarding to Operations so payloads stay lightweight
+          const cleanRaw = { ...raw };
+          delete cleanRaw.attachmentBase64;
+          delete cleanRaw.media;
+          const cleanInner = typeof raw.data === 'object' ? { ...raw.data } : {};
+          delete cleanInner.attachmentBase64;
+          delete cleanInner.media;
 
           // Forward directly to the Operations App webhook
           const targetUrl = process.env.WEB_PORTAL_INCOMING_URL || 'http://172.17.43.13:3010/api/webhooks/sms';
@@ -245,6 +359,7 @@ server.on('upgrade', (request, socket, head) => {
             const mediaUrl = mediaPath ? `/media/${mediaPath}` : null;
             // Map device payload to Onyascoot Operations format
             const forwardData = {
+              ...cleanRaw,
               address: address,
               body: body,
               direction: 'inbound',
@@ -254,9 +369,8 @@ server.on('upgrade', (request, socket, head) => {
               deviceName: ws.deviceName || null,
               mediaUrl: mediaUrl,
               timestamp,
-              ...raw,
               data: {
-                ...(typeof raw.data === 'object' ? raw.data : {}),
+                ...cleanInner,
                 address,
                 body,
                 threadId,
@@ -270,12 +384,12 @@ server.on('upgrade', (request, socket, head) => {
             }
 
             try {
-              await axios.post(targetUrl, forwardData, { headers, timeout: 5000 });
-              console.log(`🚀 Forwarded inbound SMS to Operations: ${targetUrl}`);
+              await axios.post(targetUrl, forwardData, { headers, timeout: 10000 });
+              console.log(`🚀 Forwarded inbound ${isColdCall ? 'cold_call' : 'SMS/MMS'} to Operations: ${targetUrl}`);
             } catch(firstErr) {
               console.error(`⚠️ Failed to forward to ${targetUrl}: ${firstErr.message}, trying fallback https://portal.onyascoot.com/api/webhooks/sms`);
-              await axios.post('https://portal.onyascoot.com/api/webhooks/sms', forwardData, { headers, timeout: 5000 });
-              console.log(`🚀 Forwarded inbound SMS to external interface: https://portal.onyascoot.com/api/webhooks/sms`);
+              await axios.post('https://portal.onyascoot.com/api/webhooks/sms', forwardData, { headers, timeout: 10000 });
+              console.log(`🚀 Forwarded inbound ${isColdCall ? 'cold_call' : 'SMS/MMS'} to external interface: https://portal.onyascoot.com/api/webhooks/sms`);
             }
           } catch (err) {
             console.error(`❌ Error forwarding inbound SMS: ${err.message}`);
@@ -334,17 +448,19 @@ app.post('/api/send-sms', (req, res) => {
     ws.send(JSON.stringify(payload));
     console.log(`📤 Relay signal (${action}) sent to device ${deviceId}:`, payload);
     
-    // Save outbound message to local DB
+    // Save outbound message to local DB (skip 'dial' actions so they don't create empty-body messages)
     const messageId = `msg-out-${uuidv4().slice(0, 8)}`;
-    saveMessage({
-      id: messageId,
-      deviceId,
-      address,
-      body,
-      direction: 'outbound',
-      timestamp: new Date().toISOString(),
-      status: 'pending'
-    });
+    if (action !== 'dial') {
+      saveMessage({
+        id: messageId,
+        deviceId,
+        address,
+        body: body || '',
+        direction: 'outbound',
+        timestamp: new Date().toISOString(),
+        status: 'pending'
+      });
+    }
 
     res.json({ status: 'sent', action, deviceId, message_uid: messageId });
   } catch (err) {
@@ -354,12 +470,8 @@ app.post('/api/send-sms', (req, res) => {
 });
 
 /**
- * Proxy: GET /api/conversations -> Phone HTTP API
- * Allows the Operations Dashboard to retrieve all SMS threads from the phone.
- */
-/**
  * GET /api/conversations
- * Retrieves all SMS threads from the phone via WebSocket first, then HTTP fallback, or local DB.
+ * Retrieves all SMS threads from the phone via WebSocket first, or cached/local DB.
  */
 app.get('/api/conversations', async (req, res) => {
   const authHeader = req.headers['authorization'];
@@ -368,66 +480,76 @@ app.get('/api/conversations', async (req, res) => {
   }
 
   // First, check local database
-  const localConversations = getConversations();
+  const localConversations = getConversations().map(c => ({
+    address: c.address,
+    snippet: c.last_message_body,
+    date: new Date(c.last_message_timestamp).getTime(),
+    threadId: Number(c.thread_id) || c.thread_id
+  }));
+
   if (localConversations.length > 0 && req.query.sync !== 'true') {
     console.log(`📦 Serving ${localConversations.length} conversations from local DB`);
-    return res.json(localConversations.map(c => ({
-      address: c.address,
-      snippet: c.last_message_body,
-      date: new Date(c.last_message_timestamp).getTime(),
-      threadId: c.thread_id
-    })));
+    return res.json(localConversations);
   }
 
-  // 1. Try active WebSocket client first (works over cellular NAT and Wi-Fi)
+  // If we have a fresh in-memory cache (< 60s old), merge it with localConversations and return immediately!
+  if (cachedPhoneConversations && (Date.now() - cachedPhoneConversationsAt < 60000) && req.query.force !== 'true') {
+    const mergedMap = new Map();
+    for (const c of cachedPhoneConversations) {
+      mergedMap.set(String(normalizeThreadId(c.threadId || c.id)), c);
+    }
+    for (const lc of localConversations) {
+      const tid = String(normalizeThreadId(lc.threadId));
+      if (!mergedMap.has(tid)) {
+        mergedMap.set(tid, lc);
+      }
+    }
+    const merged = Array.from(mergedMap.values());
+    console.log(`⚡ Serving ${merged.length} conversations from memory cache + local DB`);
+    return res.json(merged);
+  }
+
+  // 1. Try active WebSocket client first (deduplicating concurrent in-flight requests)
   const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
   if (activeWs) {
     try {
-      console.log(`📲 Querying /api/conversations from device ${activeWs.deviceId} via WebSocket`);
-      const convs = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 25000);
-      if (Array.isArray(convs) && convs.length > 0) {
-        convs.forEach(conv => {
-          saveMessage({
-            id: `sync-conv-${conv.threadId || conv.id}`,
-            deviceId: activeWs.deviceId || 'sync',
-            address: conv.address,
-            body: conv.snippet || conv.body || '',
-            direction: 'inbound',
-            timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
-            threadId: conv.threadId || conv.id,
-            status: 'synced'
+      if (!inFlightConversationsPromise) {
+        console.log(`📲 Querying /api/conversations from device ${activeWs.deviceId} via WebSocket`);
+        inFlightConversationsPromise = sendWsRequest(activeWs, { action: 'fetch_conversations' }, 30000)
+          .finally(() => {
+            inFlightConversationsPromise = null;
           });
-        });
-        return res.json(convs);
+      }
+      const convs = await inFlightConversationsPromise;
+      if (Array.isArray(convs) && convs.length > 0) {
+        cacheAndPersistConversations(convs, activeWs.deviceId);
+        // Merge in any local conversations (e.g. threads > 783 or MMS-only threads) not in simple=true
+        const mergedMap = new Map();
+        for (const c of convs) {
+          mergedMap.set(String(normalizeThreadId(c.threadId || c.id)), c);
+        }
+        for (const lc of localConversations) {
+          const tid = String(normalizeThreadId(lc.threadId));
+          if (!mergedMap.has(tid)) {
+            mergedMap.set(tid, lc);
+          }
+        }
+        return res.json(Array.from(mergedMap.values()));
       }
     } catch (wsErr) {
       console.warn(`⚠️ WebSocket conversations query failed: ${wsErr.message}`);
     }
-  }
-
-  // 2. Fallback to HTTP proxy if phone LAN IP is accessible
-  const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
-  if (phoneUrl) {
+  } else if (PHONE_API_URL) {
+    // 2. Fallback to HTTP proxy only if PHONE_API_URL is explicitly configured and no WS is active
     try {
-      console.log(`📲 Proxying GET /api/conversations -> ${phoneUrl}`);
-      const response = await axios.get(`${phoneUrl}/api/conversations`, {
+      console.log(`📲 Proxying GET /api/conversations -> ${PHONE_API_URL}`);
+      const response = await axios.get(`${PHONE_API_URL}/api/conversations`, {
         headers: { 'Authorization': `Bearer ${API_KEY}` },
-        timeout: 10000
+        timeout: 5000
       });
 
       if (Array.isArray(response.data)) {
-        response.data.forEach(conv => {
-          saveMessage({
-            id: `sync-conv-${conv.threadId || conv.id}`,
-            deviceId: 'sync',
-            address: conv.address,
-            body: conv.snippet || conv.body || '',
-            direction: 'inbound',
-            timestamp: conv.date ? new Date(conv.date).toISOString() : new Date().toISOString(),
-            threadId: conv.threadId || conv.id,
-            status: 'synced'
-          });
-        });
+        cacheAndPersistConversations(response.data, 'sync');
         return res.json(response.data);
       }
     } catch (err) {
@@ -440,8 +562,25 @@ app.get('/api/conversations', async (req, res) => {
 });
 
 /**
+ * Format local DB rows to the standard API message format
+ */
+function formatLocalMessages(rows) {
+  return rows.map(m => ({
+    id: m.id,
+    address: m.address,
+    body: m.body,
+    type: m.direction === 'inbound' ? 1 : 2,
+    date: new Date(m.timestamp).getTime(),
+    timestamp: new Date(m.timestamp).getTime(),
+    threadId: Number(m.thread_id) || m.thread_id,
+    mediaUrl: m.media_path ? `/media/${m.media_path}` : null,
+    attachmentBase64: null
+  }));
+}
+
+/**
  * GET /api/messages
- * Retrieves messages for a thread via WebSocket first, then HTTP fallback, or local DB.
+ * Retrieves messages for a thread or address via WebSocket + local DB merge.
  */
 app.get('/api/messages', async (req, res) => {
   const authHeader = req.headers['authorization'];
@@ -450,110 +589,132 @@ app.get('/api/messages', async (req, res) => {
   }
 
   const { address, threadId, limit, offset, sync } = req.query;
+  const parsedLimit = parseInt(limit) || 50;
+  const parsedOffset = parseInt(offset) || 0;
 
   // First, check local database
-  const localMessages = getMessages({ address, threadId, limit: parseInt(limit) || 50, offset: parseInt(offset) || 0 });
+  const localMessages = getMessages({ address, threadId, limit: parsedLimit, offset: parsedOffset });
   if (localMessages.length > 0 && sync !== 'true') {
     console.log(`📦 Serving ${localMessages.length} messages from local DB`);
-    return res.json(localMessages.map(m => ({
-      id: m.id,
-      address: m.address,
-      body: m.body,
-      type: m.direction === 'inbound' ? 1 : 2,
-      date: new Date(m.timestamp).getTime(),
-      threadId: m.thread_id,
-      mediaUrl: m.media_path ? `/media/${m.media_path}` : null,
-      attachmentBase64: null
-    })));
+    return res.json(formatLocalMessages(localMessages));
   }
 
   // 1. Try active WebSocket client first
   const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
   if (activeWs) {
     try {
-      console.log(`📲 Querying /api/messages from device ${activeWs.deviceId} via WebSocket (threadId: ${threadId || 'all'})`);
-      const msgs = await sendWsRequest(activeWs, {
-        action: 'fetch_messages',
-        threadId: threadId ? Number(threadId) : -1,
-        address: address || '',
-        limit: parseInt(limit) || 50,
-        offset: parseInt(offset) || 0,
-        includeMms: true
-      }, 15000);
+      const cleanReqThreadId = normalizeThreadId(threadId);
+      const threadIdsToQuery = new Set();
+      if (cleanReqThreadId) {
+        threadIdsToQuery.add(cleanReqThreadId);
+      } else if (address) {
+        // Resolve known thread IDs for this address (e.g. both SMS thread 932 and MMS thread 933)
+        for (const tid of findThreadIdsForAddress(address)) {
+          threadIdsToQuery.add(tid);
+        }
+      }
 
-      if (Array.isArray(msgs) && msgs.length > 0) {
-        msgs.forEach(pm => {
-          let mediaPath = null;
-          let mimeType = null;
-          if (pm.attachmentBase64) {
-            mimeType = pm.attachmentMimeType || 'image/jpeg';
-            const ext = mimeType.split('/')[1] || 'jpg';
-            const fileName = `${pm.id || uuidv4().slice(0, 8)}.${ext}`;
-            const fullPath = path.join(mediaDir, fileName);
-            try {
-              if (!fs.existsSync(fullPath)) {
-                fs.writeFileSync(fullPath, Buffer.from(pm.attachmentBase64, 'base64'));
-              }
-              mediaPath = fileName;
-              pm.mediaUrl = `/media/${fileName}`;
-              delete pm.attachmentBase64;
-            } catch (writeErr) {
-              console.error(`Failed to write sync attachment: ${writeErr.message}`);
-            }
+      const collectedPhoneMsgs = [];
+      const queriedThreadIds = new Set();
+
+      // A) Query each known threadId directly on the phone (most reliable — works regardless of 04/+61 format)
+      for (const tid of threadIdsToQuery) {
+        queriedThreadIds.add(String(tid));
+        try {
+          console.log(`📲 Querying /api/messages from device ${activeWs.deviceId} via WebSocket (threadId: ${tid})`);
+          const msgs = await sendWsRequest(activeWs, {
+            action: 'fetch_messages',
+            threadId: Number(tid),
+            address: address || '',
+            limit: parsedLimit,
+            offset: parsedOffset,
+            includeMms: true
+          }, 15000);
+          if (Array.isArray(msgs) && msgs.length > 0) {
+            const processed = processAndPersistPhoneMessages(msgs, address, tid, activeWs.deviceId);
+            collectedPhoneMsgs.push(...processed);
           }
+        } catch (tidErr) {
+          console.warn(`⚠️ WebSocket messages query failed for threadId ${tid}: ${tidErr.message}`);
+        }
+      }
 
-          saveMessage({
-            id: String(pm.id || `sync-msg-${uuidv4().slice(0, 8)}`),
-            deviceId: activeWs.deviceId || 'sync',
-            address: pm.address || address,
-            body: pm.body || '',
-            direction: pm.type === 1 ? 'inbound' : 'outbound',
-            mediaPath,
-            mimeType,
-            timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
-            threadId: pm.threadId || threadId,
-            status: 'synced'
-          });
+      // B) If address was provided (and either no threadId was known or we also want to check +61 / 61 variants on the phone)
+      if (address && (!cleanReqThreadId)) {
+        const variants = getAddressVariants(address);
+        // Prefer +61... and 61... first because Android's canonical-addresses uses international format
+        const orderedVariants = variants.sort((a, b) => {
+          const score = s => (s.startsWith('+61') ? 0 : s.startsWith('61') ? 1 : 2);
+          return score(a) - score(b);
         });
-        return res.json(msgs);
+
+        for (const addrVariant of orderedVariants) {
+          // If we already found messages and we've checked +61 and 61 variants, don't waste time on 04 (which throws SecurityException on non-default SMS app)
+          if (collectedPhoneMsgs.length > 0 && addrVariant.startsWith('0')) {
+            continue;
+          }
+          try {
+            console.log(`📲 Querying /api/messages from device ${activeWs.deviceId} via WebSocket (address: ${addrVariant})`);
+            const msgs = await sendWsRequest(activeWs, {
+              action: 'fetch_messages',
+              threadId: -1,
+              address: addrVariant,
+              limit: parsedLimit,
+              offset: parsedOffset,
+              includeMms: true
+            }, 12000);
+            if (Array.isArray(msgs) && msgs.length > 0) {
+              const processed = processAndPersistPhoneMessages(msgs, address, null, activeWs.deviceId);
+              collectedPhoneMsgs.push(...processed);
+            }
+          } catch (addrErr) {
+            console.warn(`⚠️ WebSocket messages query failed for address ${addrVariant}: ${addrErr.message}`);
+          }
+        }
+      }
+
+      // Refresh localMessages after persisting everything from the phone so we return the complete union
+      const updatedLocal = getMessages({ address, threadId, limit: Math.max(parsedLimit, 200), offset: parsedOffset });
+      if (updatedLocal.length > 0 || collectedPhoneMsgs.length > 0) {
+        // Deduplicate by message id, preferring collectedPhoneMsgs combined with updatedLocal
+        const mergedById = new Map();
+        for (const m of formatLocalMessages(updatedLocal)) {
+          mergedById.set(String(m.id), m);
+        }
+        for (const pm of collectedPhoneMsgs) {
+          const existing = mergedById.get(String(pm.id));
+          mergedById.set(String(pm.id), {
+            ...existing,
+            ...pm,
+            mediaUrl: pm.mediaUrl || (existing ? existing.mediaUrl : null)
+          });
+        }
+        const mergedList = Array.from(mergedById.values()).sort((a, b) => (b.date || b.timestamp || 0) - (a.date || a.timestamp || 0));
+        return res.json(mergedList);
       }
     } catch (wsErr) {
       console.warn(`⚠️ WebSocket messages query failed: ${wsErr.message}`);
     }
-  }
-
-  // 2. Fallback to HTTP proxy
-  const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
-  if (phoneUrl) {
+  } else if (PHONE_API_URL) {
+    // 2. Fallback to HTTP proxy only if PHONE_API_URL is configured and no WS device is connected
     const query = new URLSearchParams(req.query).toString();
     try {
-      console.log(`📲 Proxying GET /api/messages?${query} -> ${phoneUrl}`);
-      const response = await axios.get(`${phoneUrl}/api/messages?${query}`, {
+      console.log(`📲 Proxying GET /api/messages?${query} -> ${PHONE_API_URL}`);
+      const response = await axios.get(`${PHONE_API_URL}/api/messages?${query}`, {
         headers: { 'Authorization': `Bearer ${API_KEY}` },
-        timeout: 15000
+        timeout: 8000
       });
 
       if (Array.isArray(response.data)) {
-        response.data.forEach(pm => {
-          saveMessage({
-            id: pm.id || `sync-msg-${uuidv4().slice(0, 8)}`,
-            deviceId: 'sync',
-            address: pm.address || address,
-            body: pm.body || '',
-            direction: pm.type === 1 ? 'inbound' : 'outbound',
-            timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
-            threadId: pm.threadId || threadId,
-            status: 'synced'
-          });
-        });
-        return res.json(response.data);
+        const processed = processAndPersistPhoneMessages(response.data, address, threadId, 'sync');
+        return res.json(processed);
       }
     } catch (err) {
       console.error(`❌ Failed to proxy messages via HTTP: ${err.message}`);
     }
   }
 
-  res.json(localMessages);
+  res.json(formatLocalMessages(localMessages));
 });
 
 /**
@@ -561,7 +722,7 @@ app.get('/api/messages', async (req, res) => {
  */
 async function syncAllFromPhone() {
   const activeWs = Array.from(devices.values()).find(ws => ws.readyState === WebSocket.OPEN);
-  const phoneUrl = discoveredPhoneApiUrl || PHONE_API_URL;
+  const phoneUrl = PHONE_API_URL;
 
   if (!activeWs && !phoneUrl) {
     console.error('❌ Cannot sync: Phone not connected via WebSocket or HTTP');
@@ -573,7 +734,10 @@ async function syncAllFromPhone() {
     let conversations = [];
     if (activeWs) {
       try {
-        conversations = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 20000);
+        conversations = await sendWsRequest(activeWs, { action: 'fetch_conversations' }, 30000);
+        if (Array.isArray(conversations)) {
+          cacheAndPersistConversations(conversations, activeWs.deviceId);
+        }
       } catch (wsErr) {
         console.warn(`WebSocket sync conversations failed: ${wsErr.message}`);
       }
@@ -594,7 +758,7 @@ async function syncAllFromPhone() {
 
     let totalMessages = 0;
     for (const conv of conversations) {
-      const threadId = conv.threadId || conv.id;
+      const threadId = normalizeThreadId(conv.threadId || conv.id);
       const address = conv.address;
       
       try {
@@ -621,36 +785,7 @@ async function syncAllFromPhone() {
         }
 
         if (Array.isArray(messages)) {
-          messages.forEach(pm => {
-            const messageId = String(pm.id || `sync-${threadId}-${pm.date}`);
-            
-            // Handle MMS for sync too
-            let mediaPath = null;
-            let mimeType = null;
-            if (pm.attachmentBase64) {
-              mimeType = pm.attachmentMimeType || 'image/jpeg';
-              const ext = mimeType.split('/')[1] || 'jpg';
-              const fileName = `${messageId}.${ext}`;
-              const fullPath = path.join(mediaDir, fileName);
-              if (!fs.existsSync(fullPath)) {
-                fs.writeFileSync(fullPath, Buffer.from(pm.attachmentBase64, 'base64'));
-              }
-              mediaPath = fileName;
-            }
-
-            saveMessage({
-              id: messageId,
-              deviceId: 'sync-full',
-              address: pm.address || address,
-              body: pm.body || '',
-              direction: pm.type === 1 ? 'inbound' : 'outbound',
-              timestamp: pm.date ? new Date(pm.date).toISOString() : new Date().toISOString(),
-              threadId: threadId,
-              mediaPath: mediaPath,
-              mimeType: mimeType,
-              status: 'synced'
-            });
-          });
+          processAndPersistPhoneMessages(messages, address, threadId, 'sync-full');
           totalMessages += messages.length;
           console.log(`✅ Synced ${messages.length} messages for thread ${threadId} (${address})`);
         }
