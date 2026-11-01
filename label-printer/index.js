@@ -60,6 +60,9 @@ function resolveTemplate(templateInput) {
   if (norm === "job label" || norm === "job_label" || norm === "job - label") {
     return { id: "Job Label", heightMm: 100 };
   }
+  if (norm === "stock - tyre" || norm === "stock_tyre" || norm === "tyre" || norm === "stock - tire" || norm === "tire") {
+    return { id: "stock - tyre", heightMm: 300 };
+  }
   if (norm === "stock - small" || norm === "stock_small" || norm === "small") {
     return { id: "stock - small", heightMm: DEFAULT_LABEL_HEIGHT_MM };
   }
@@ -75,10 +78,10 @@ function resolveTemplate(templateInput) {
  * Price middle-left, SKU middle-right,
  * Barcode bottom-left, Logo bottom-right (same height as barcode)
  */
-function renderStockSmallPage(doc, item, heightPt) {
+function renderStockSmallPage(doc, item, heightPt, offsetY = 0) {
   const leftMargin = 10;
   const rightMargin = 14; // Protect right edge from thermal cut margin
-  const topY = 10;
+  const topY = 10 + offsetY;
 
   // 1. Top-Right: Larger QR Code for easy mobile scanning
   const qrSize = 27.5; // ~9.7mm square (significantly larger than previous 19.5pt)
@@ -117,7 +120,7 @@ function renderStockSmallPage(doc, item, heightPt) {
     });
 
   // 3. Shared Baseline: PRICE (left) & SKU (right) — 5.6pt regular
-  const skuPriceY = 41.5;
+  const skuPriceY = 41.5 + offsetY;
   const priceDisplay = item.price !== undefined && item.price !== null
     ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
     : "";
@@ -142,7 +145,7 @@ function renderStockSmallPage(doc, item, heightPt) {
   // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
   const bottomMargin = 8.5; // ~3.0mm safety margin to prevent bottom thermal cut clipping
   const barcodeHeight = 16.5;
-  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
+  const bottomRowY = offsetY + heightPt - barcodeHeight - bottomMargin;
 
   const logoHeight = barcodeHeight; // Match barcode height (16.5 pt)
   const logoWidth = logoHeight * (2000 / 906); // ~36.42 pt
@@ -162,91 +165,125 @@ function renderStockSmallPage(doc, item, heightPt) {
 
 /**
  * Render Stock - Medium Template (62x54mm Production Label)
- * Proportional medium layout with larger QR code, bold title, Price/SKU row,
- * and taller barcode + height-matched OnyaScoot logo at bottom.
+ * Vertical full-width layout matching Stock - Large, adapted for 54mm height:
+ * 1. Top Row: OnyaScoot Logo (left) + QR Code beside it (right)
+ * 2. Underneath Top Row: Category Breadcrumb + Prominent Product Name (full width, centered)
+ * 3. Just under Product Name: Retail Price (centered)
+ * 4. Bottom: Code128 Barcode spanning full width of the label, with SKU underneath
  */
-function renderStockMediumPage(doc, item, heightPt) {
-  const leftMargin = 11;
+function renderStockMediumPage(doc, item, heightPt, offsetY = 0) {
+  const leftMargin = 12;
   const rightMargin = 14;
-  const topY = 12;
+  const fullWidth = WIDTH_PT - leftMargin - rightMargin; // ~149.75 pt
+  const topY = 9 + offsetY;
 
-  // 1. Top-Right: Medium-Large QR Code
-  const qrSize = 42; // ~14.8mm square
-  const qrX = WIDTH_PT - rightMargin - qrSize; // ~119.75 pt
+  // 1. Top Row: OnyaScoot Logo (left) & QR Code beside it (right)
+  const headerHeight = 31; // ~10.9mm height for both logo and QR code
+  const logoHeight = headerHeight;
+  const logoWidth = logoHeight * (2000 / 906); // ~68.43 pt
+  const logoX = leftMargin;
+  const logoY = topY;
+
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
+  }
+
+  const qrSize = headerHeight; // 31 pt (~10.9mm square)
+  const qrX = WIDTH_PT - rightMargin - qrSize; // ~130.75 pt
   const qrY = topY;
 
   if (item._qrPng) {
     doc.image(item._qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
 
-  // 2. Top-Left: Category Breadcrumbs & Product Title
-  const leftColX = leftMargin;
-  const leftColWidth = qrX - leftColX - 8; // ~100.75 pt
-
+  // 2. Underneath Top Row: Category Breadcrumb & Full-Width Product Name
   const breadcrumbText = String(item.breadcrumb || item.category || "").trim();
-  let titleY = topY;
+  let titleY = topY + headerHeight + 5; // 45 pt
 
   if (breadcrumbText) {
-    doc.fontSize(6.5).font("Helvetica").fillColor("#000000")
-      .text(breadcrumbText, leftColX, topY, {
-        width: leftColWidth,
-        align: "left",
-        ellipsis: true
+    doc.fontSize(7).font("Helvetica").fillColor("#000000")
+      .text(breadcrumbText, leftMargin, titleY, {
+        width: fullWidth,
+        align: "center",
+        ellipsis: true,
       });
-    titleY = topY + 9;
+    titleY += 9.5; // 54.5 pt
   }
 
   const titleText = (item.title || "ITEM NAME").toUpperCase();
-  const titleFontSize = breadcrumbText ? 10.2 : 11.0;
-  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000")
-    .text(titleText, leftColX, titleY, {
-      width: leftColWidth,
-      align: "left",
-      lineGap: 0.5
-    });
+  const titleFontSize = 10.5;
+  doc.fontSize(titleFontSize).font("Helvetica-Bold").fillColor("#000000");
 
-  // 3. Shared Baseline: PRICE (left) & SKU (right)
-  const skuPriceY = 86;
+  const titleOptions = {
+    width: fullWidth,
+    align: "center",
+    lineGap: 0.3,
+  };
+  const maxTitleHeight = 39;
+  const measuredTitleHeight = Math.min(maxTitleHeight, doc.heightOfString(titleText, titleOptions));
+
+  doc.text(titleText, leftMargin, titleY, {
+    ...titleOptions,
+    height: maxTitleHeight,
+    ellipsis: true,
+  });
+
+  // 3. Just Under Product Name: Price
   const priceDisplay = item.price !== undefined && item.price !== null
     ? (typeof item.price === "number" ? `$${item.price.toFixed(2)}` : (String(item.price).startsWith("$") ? item.price : `$${item.price}`))
     : "";
 
+  const priceY = titleY + measuredTitleHeight + 3;
   if (priceDisplay) {
-    doc.fontSize(8.5).font("Helvetica").fillColor("#000000")
-      .text(priceDisplay, leftColX, skuPriceY, {
-        width: 75,
-        align: "left"
+    doc.fontSize(10.5).font("Helvetica-Bold").fillColor("#000000")
+      .text(priceDisplay, leftMargin, priceY, {
+        width: fullWidth,
+        align: "center",
       });
+  }
+
+  // 4. Bottom: Full-Width Barcode + SKU underneath the Barcode
+  const barcodeHeight = 24;
+  const skuY = offsetY + heightPt - 16.5; // ~136.57 pt
+  const barcodeY = skuY - barcodeHeight - 3.5; // ~109.07 pt
+
+  if (item._barcodePng) {
+    doc.image(item._barcodePng, leftMargin, barcodeY, {
+      width: fullWidth,
+      height: barcodeHeight,
+    });
   }
 
   const skuDisplay = item.sku || "";
   if (skuDisplay) {
     doc.fontSize(8.5).font("Helvetica").fillColor("#000000")
-      .text(skuDisplay, WIDTH_PT - rightMargin - 85, skuPriceY, {
-        width: 85,
-        align: "right"
+      .text(skuDisplay, leftMargin, skuY, {
+        width: fullWidth,
+        align: "center",
       });
   }
+}
 
-  // 4. Bottom Row: Barcode (Left) & Logo (Right, exact same height as barcode)
-  const bottomMargin = 11;
-  const barcodeHeight = 25;
-  const bottomRowY = heightPt - barcodeHeight - bottomMargin;
+/**
+ * Render Stock - Tyre Template (62x300mm Continuous Wrap Label)
+ * Specifically designed for scooter and bike tyres:
+ * 1. Small template at start (0 - 28mm = 0 to ~79.37 pt) for tyre sidewall visibility
+ * 2. 30mm blank gap (28 - 58mm = ~79.37 to ~164.41 pt)
+ * 3. Medium template (58 - 112mm = ~164.41 to ~317.48 pt) for tyre tread visibility
+ * 4. Remaining length (112 - 300mm = ~317.48 to ~850.39 pt) left blank as adhesive wrap strap
+ */
+function renderStockTyrePage(doc, item, heightPt) {
+  const smallHeightPt = 28 * MM_TO_PT;
+  const gapPt = 30 * MM_TO_PT;
+  const mediumHeightPt = 54 * MM_TO_PT;
 
-  const logoHeight = barcodeHeight; // Match barcode height (25 pt)
-  const logoWidth = logoHeight * (2000 / 906); // ~55.19 pt
-  const logoX = WIDTH_PT - rightMargin - logoWidth;
-  const logoY = bottomRowY;
+  // 1. Sidewall Section: Stock - Small (0mm to 28mm)
+  renderStockSmallPage(doc, item, smallHeightPt, 0);
 
-  if (fs.existsSync(LOGO_PATH)) {
-    doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth, height: logoHeight });
-  }
+  // 2. Tread Section: Stock - Medium (58mm to 112mm)
+  renderStockMediumPage(doc, item, mediumHeightPt, smallHeightPt + gapPt);
 
-  if (item._barcodePng) {
-    const barcodeX = leftMargin;
-    const barcodeWidth = logoX - barcodeX - 8;
-    doc.image(item._barcodePng, barcodeX, bottomRowY, { width: barcodeWidth, height: barcodeHeight });
-  }
+  // 3. Tail (112mm to 300mm) remains blank for wrap-around
 }
 
 /**
@@ -571,6 +608,8 @@ async function generateLabelsPdf(items, options = {}) {
 
       if (resolved.id === "Job Label") {
         renderJobLabelPage(doc, label, heightPt);
+      } else if (resolved.id === "stock - tyre") {
+        renderStockTyrePage(doc, label, heightPt);
       } else if (resolved.id === "stock - medium") {
         renderStockMediumPage(doc, label, heightPt);
       } else if (resolved.id === "stock - large") {
