@@ -267,23 +267,25 @@ function renderStockMediumPage(doc, item, heightPt, offsetY = 0) {
 /**
  * Render Stock - Tyre Template (62x300mm Continuous Wrap Label)
  * Specifically designed for scooter and bike tyres:
- * 1. Small template at start (0 - 28mm = 0 to ~79.37 pt) for tyre sidewall visibility
- * 2. 30mm blank gap (28 - 58mm = ~79.37 to ~164.41 pt)
- * 3. Medium template (58 - 112mm = ~164.41 to ~317.48 pt) for tyre tread visibility
- * 4. Remaining length (112 - 300mm = ~317.48 to ~850.39 pt) left blank as adhesive wrap strap
+ * 1. 40mm top lead-in spacing (0 - 40mm)
+ * 2. Small template (40 - 68mm = ~113.39 to ~192.76 pt) for tyre sidewall visibility
+ * 3. 15mm blank gap (68 - 83mm = ~192.76 to ~235.28 pt)
+ * 4. Medium template (83 - 137mm = ~235.28 to ~388.35 pt) for tyre tread visibility
+ * 5. Remaining length (137 - 300mm = ~388.35 to ~850.39 pt) left blank as adhesive wrap strap
  */
 function renderStockTyrePage(doc, item, heightPt) {
+  const topOffsetPt = 40 * MM_TO_PT;
   const smallHeightPt = 28 * MM_TO_PT;
-  const gapPt = 30 * MM_TO_PT;
+  const gapPt = 15 * MM_TO_PT;
   const mediumHeightPt = 54 * MM_TO_PT;
 
-  // 1. Sidewall Section: Stock - Small (0mm to 28mm)
-  renderStockSmallPage(doc, item, smallHeightPt, 0);
+  // 1. Sidewall Section: Stock - Small (starts at 40mm)
+  renderStockSmallPage(doc, item, smallHeightPt, topOffsetPt);
 
-  // 2. Tread Section: Stock - Medium (58mm to 112mm)
-  renderStockMediumPage(doc, item, mediumHeightPt, smallHeightPt + gapPt);
+  // 2. Tread Section: Stock - Medium (starts at 40mm + 28mm + 15mm = 83mm)
+  renderStockMediumPage(doc, item, mediumHeightPt, topOffsetPt + smallHeightPt + gapPt);
 
-  // 3. Tail (112mm to 300mm) remains blank for wrap-around
+  // 3. Tail (137mm to 300mm) remains blank for wrap-around
 }
 
 /**
