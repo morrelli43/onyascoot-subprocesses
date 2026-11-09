@@ -411,13 +411,26 @@ class GoogleCalendarConnector:
             if props.get('ops_job_uid') or props.get('job_uid') or props.get('square_booking_id') or props.get('managed_by') == 'onyascoot_ops':
                 continue
 
-            organizer_email = (ev.get('organizer', {}).get('email') or ev.get('creator', {}).get('email') or '').strip().lower()
-            if allowed_set and organizer_email not in allowed_set:
-                continue
+            org_email = (ev.get('organizer', {}).get('email') or '').strip().lower()
+            creator_email = (ev.get('creator', {}).get('email') or '').strip().lower()
+
+            # Determine the effective allowed email (handles secondary calendars such as @group.calendar.google.com)
+            effective_email = None
+            if allowed_set:
+                if org_email in allowed_set:
+                    effective_email = org_email
+                elif creator_email in allowed_set:
+                    effective_email = creator_email
+                else:
+                    continue
+            else:
+                effective_email = org_email if (org_email and not org_email.endswith('@group.calendar.google.com')) else (creator_email or org_email)
 
             # Exclude self-created events if onyascoot@gmail.com is not in the whitelist
-            if organizer_email == 'onyascoot@gmail.com' and 'onyascoot@gmail.com' not in allowed_set:
+            if effective_email == 'onyascoot@gmail.com' and 'onyascoot@gmail.com' not in allowed_set:
                 continue
+
+            organizer_email = effective_email
 
             # Determine responseStatus for onyascoot@gmail.com
             attendees = ev.get('attendees', [])
@@ -449,6 +462,7 @@ class GoogleCalendarConnector:
                     'description': ev.get('description') or '',
                     'location': ev.get('location') or '',
                     'organizer_email': organizer_email or None,
+                    'creator_email': creator_email or None,
                     'is_all_day': True,
                     'start_date': start_date_str,
                     'end_date': end_date_str,
@@ -484,6 +498,7 @@ class GoogleCalendarConnector:
                     'description': ev.get('description') or '',
                     'location': ev.get('location') or '',
                     'organizer_email': organizer_email or None,
+                    'creator_email': creator_email or None,
                     'is_all_day': False,
                     'start_date': start_date_str,
                     'end_date': end_date_str,
